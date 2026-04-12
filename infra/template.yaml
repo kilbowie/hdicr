@@ -12,7 +12,6 @@ Globals:
         NODE_ENV: !Ref Environment
         AUTH0_DOMAIN: !Ref Auth0Domain
         AUTH0_AUDIENCE: !Ref Auth0Audience
-        AWS_REGION: !Ref AWS::Region
 
 Parameters:
   Environment:
@@ -64,7 +63,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+          DATABASE_URL: !Ref HDICRDatabaseURL
           S3_BUCKET_NAME: !Ref S3BucketName
       Events:
         Proxy:
@@ -82,7 +81,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+          DATABASE_URL: !Ref HDICRDatabaseURL
       Events:
         Proxy:
           Type: Api
@@ -99,7 +98,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+          DATABASE_URL: !Ref HDICRDatabaseURL
       Events:
         Proxy:
           Type: Api
@@ -116,7 +115,7 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+          DATABASE_URL: !Ref HDICRDatabaseURL
       Events:
         Proxy:
           Type: Api
@@ -137,7 +136,7 @@ Resources:
   HDICRBasePathMapping:
     Type: AWS::ApiGateway::BasePathMapping
     DependsOn:
-      - HDICRApiStage
+      - HDICRApiprodStage
       - HDICRCustomDomain
     Properties:
       DomainName: !Ref HDICRCustomDomain
