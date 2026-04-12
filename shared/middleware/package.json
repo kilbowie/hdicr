@@ -1,0 +1,25 @@
+{
+  "name": "@trulyimagined/middleware",
+  "version": "3.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@trulyimagined/types": "workspace:*",
+    "@trulyimagined/utils": "workspace:*",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.132",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^20.19.0",
+    "typescript": "^5.8.0"
+  }
+}

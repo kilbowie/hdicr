@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "incremental": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@trulyimagined/types": ["./shared/types/src"],
+      "@trulyimagined/utils": ["./shared/utils/src"],
+      "@trulyimagined/middleware": ["./shared/middleware/src"],
+      "@trulyimagined/database": ["./infra/database/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build"]
+}

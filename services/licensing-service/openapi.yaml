@@ -1,0 +1,742 @@
+openapi: 3.1.0
+info:
+  title: HDICR Licensing Service API
+  version: 3.0.0
+  summary: Licensing request lifecycle and actor licensing management contract.
+  description: >-
+    Defines endpoint contracts for submitting license requests, making actor decisions,
+    resolving actor licensing context, and retrieving license/request aggregates.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.trulyimagined.com
+    description: Production API
+tags:
+  - name: Licensing
+    description: License request creation, decisioning, and actor licensing data.
+security:
+  - bearerAuth: []
+paths:
+  /v1/license/request:
+    post:
+      tags: [Licensing]
+      operationId: requestLicense
+      summary: Create a license request for an actor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LicenseRequestCreateInput'
+      responses:
+        '201':
+          description: License request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseRequestCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/license/actor/{actorId}:
+    get:
+      tags: [Licensing]
+      operationId: listLicenseRequestsForActor
+      summary: List license requests targeting a specific actor
+      parameters:
+        - $ref: '#/components/parameters/ActorIdPath'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Actor request listing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorRequestsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/license/{requestId}/approve:
+    post:
+      tags: [Licensing]
+      operationId: approveLicenseRequest
+      summary: Approve a pending license request
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      responses:
+        '200':
+          description: Request approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseDecisionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/license/{requestId}/reject:
+    post:
+      tags: [Licensing]
+      operationId: rejectLicenseRequest
+      summary: Reject a pending license request
+      parameters:
+        - $ref: '#/components/parameters/RequestIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: Request rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LicenseDecisionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/licensing/actor-id:
+    get:
+      tags: [Licensing]
+      operationId: resolveLicensingActorIdByAuth0UserId
+      summary: Resolve actor ID for an Auth0 user
+      parameters:
+        - $ref: '#/components/parameters/Auth0UserIdQuery'
+      responses:
+        '200':
+          description: Actor ID resolution payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorIdResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/licensing/actor-requests:
+    get:
+      tags: [Licensing]
+      operationId: listActorLicensingRequests
+      summary: List actor licensing requests with optional status filter
+      parameters:
+        - $ref: '#/components/parameters/ActorIdQuery'
+        - $ref: '#/components/parameters/RequestStatusQuery'
+      responses:
+        '200':
+          description: Licensing requests grouped for actor workflow
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorRequestsSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/licensing/request:
+    get:
+      tags: [Licensing]
+      operationId: getLicensingRequestById
+      summary: Get a single licensing request by request ID
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request detail payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestByIdResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/licensing/decision:
+    post:
+      tags: [Licensing]
+      operationId: applyLicensingDecision
+      summary: Apply actor decision to a licensing request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyDecisionRequest'
+      responses:
+        '200':
+          description: Decision payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyDecisionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/licensing/actor/licenses-and-stats:
+    get:
+      tags: [Licensing]
+      operationId: getActorLicensesAndStats
+      summary: Fetch actor license records and licensing metrics
+      parameters:
+        - $ref: '#/components/parameters/ActorIdQuery'
+        - $ref: '#/components/parameters/RequestStatusQuery'
+      responses:
+        '200':
+          description: License records and stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorLicensesAndStatsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/licensing/representation/active:
+    get:
+      tags: [Licensing]
+      operationId: verifyActiveRepresentation
+      summary: Check if actor-agent representation is active
+      parameters:
+        - $ref: '#/components/parameters/ActorIdQuery'
+        - $ref: '#/components/parameters/AgentIdQuery'
+      responses:
+        '200':
+          description: Active representation flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveRepresentationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/licensing/agent-actor-data:
+    get:
+      tags: [Licensing]
+      operationId: getAgentActorLicensingData
+      summary: Get combined licensing request and license data for an actor
+      parameters:
+        - $ref: '#/components/parameters/ActorIdQuery'
+      responses:
+        '200':
+          description: Combined actor licensing data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentActorDataResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Auth0 RS256-signed JWT. Required on all endpoints (except OPTIONS
+        preflight). Scope enforcement is applied after signature verification.
+    hdicrOAuth2:
+      type: oauth2
+      description: >
+        OAuth 2.1 client credentials used by TI or any authorised HDICR client.
+        Tokens are acquired via POST /oauth/token with grant_type=client_credentials.
+        The required scope per endpoint determines which operations are permitted.
+      flows:
+        clientCredentials:
+          tokenUrl: https://{auth0Domain}/oauth/token
+          scopes:
+            hdicr:licensing:read: Read licensing requests, decisions, and actor license data
+            hdicr:licensing:write: Create, approve, or reject licensing requests
+  parameters:
+    ActorIdPath:
+      name: actorId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RequestIdPath:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ActorIdQuery:
+      name: actorId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Auth0UserIdQuery:
+      name: auth0UserId
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    AgentIdQuery:
+      name: agentId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RequestStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/LicenseStatus'
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  responses:
+    BadRequest:
+      description: Invalid request payload or query parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated caller lacks required scope or role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Request conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+      additionalProperties: true
+    LicenseStatus:
+      type: string
+      enum: [pending, approved, rejected, expired]
+    CurrencyCode:
+      type: string
+      minLength: 3
+      maxLength: 3
+    CompensationAmount:
+      type: [number, 'null']
+      minimum: 0
+    LicenseRequestSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+        requesterName:
+          type: string
+        requesterEmail:
+          type: string
+          format: email
+        requesterOrganization:
+          type: [string, 'null']
+        projectName:
+          type: string
+        projectDescription:
+          type: string
+        usageType:
+          type: string
+        intendedUse:
+          type: string
+        compensationOffered:
+          $ref: '#/components/schemas/CompensationAmount'
+        compensationCurrency:
+          $ref: '#/components/schemas/CurrencyCode'
+        status:
+          $ref: '#/components/schemas/LicenseStatus'
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - actorId
+        - requesterName
+        - requesterEmail
+        - projectName
+        - projectDescription
+        - usageType
+        - intendedUse
+        - status
+        - createdAt
+      additionalProperties: false
+    LicenseRequestCreateInput:
+      type: object
+      properties:
+        actorId:
+          type: string
+          format: uuid
+        requesterName:
+          type: string
+        requesterEmail:
+          type: string
+          format: email
+        requesterOrganization:
+          type: string
+        projectName:
+          type: string
+        projectDescription:
+          type: string
+        usageType:
+          type: string
+        intendedUse:
+          type: string
+        durationStart:
+          type: string
+          format: date-time
+        durationEnd:
+          type: string
+          format: date-time
+        compensationOffered:
+          $ref: '#/components/schemas/CompensationAmount'
+        compensationCurrency:
+          $ref: '#/components/schemas/CurrencyCode'
+      required:
+        - actorId
+        - requesterName
+        - requesterEmail
+        - projectName
+        - projectDescription
+        - usageType
+        - intendedUse
+      additionalProperties: false
+    LicenseRequestCreateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        request:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            actorId:
+              type: string
+              format: uuid
+            projectName:
+              type: string
+            usageType:
+              type: string
+            status:
+              $ref: '#/components/schemas/LicenseStatus'
+            createdAt:
+              type: string
+              format: date-time
+          required: [id, actorId, projectName, usageType, status, createdAt]
+          additionalProperties: false
+      required: [success, message, request]
+      additionalProperties: false
+    ActorRequestsResponse:
+      type: object
+      properties:
+        actorId:
+          type: string
+          format: uuid
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseRequestSummary'
+        pagination:
+          type: object
+          properties:
+            limit:
+              type: integer
+            offset:
+              type: integer
+            total:
+              type: integer
+          required: [limit, offset, total]
+          additionalProperties: false
+      required: [actorId, requests, pagination]
+      additionalProperties: false
+    LicenseDecisionRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/LicenseStatus'
+        approvedAt:
+          type: [string, 'null']
+          format: date-time
+        rejectedAt:
+          type: [string, 'null']
+          format: date-time
+        rejectionReason:
+          type: [string, 'null']
+      required: [id, status]
+      additionalProperties: false
+    LicenseDecisionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        request:
+          $ref: '#/components/schemas/LicenseDecisionRecord'
+      required: [success, message, request]
+      additionalProperties: false
+    ActorIdResponse:
+      type: object
+      properties:
+        actorId:
+          type: [string, 'null']
+          format: uuid
+      required: [actorId]
+      additionalProperties: false
+    ActorRequestsSummaryResponse:
+      type: object
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseRequestSummary'
+        pendingCount:
+          type: integer
+      required: [requests, pendingCount]
+      additionalProperties: false
+    RequestByIdResponse:
+      type: object
+      properties:
+        request:
+          oneOf:
+            - $ref: '#/components/schemas/LicenseRequestSummary'
+            - type: 'null'
+      required: [request]
+      additionalProperties: false
+    DecisionAction:
+      type: string
+      enum: [approve, reject]
+    ApplyDecisionRequest:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/DecisionAction'
+        rejectionReason:
+          type: string
+      required: [requestId, actorId, action]
+      additionalProperties: false
+    ApplyDecisionResponse:
+      type: object
+      properties:
+        decision:
+          oneOf:
+            - $ref: '#/components/schemas/LicenseDecisionRecord'
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+      required: [decision]
+      additionalProperties: false
+    LicenseRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/LicenseStatus'
+        compensationAmount:
+          $ref: '#/components/schemas/CompensationAmount'
+        compensationCurrency:
+          $ref: '#/components/schemas/CurrencyCode'
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, actorId, requestId, status, createdAt]
+      additionalProperties: true
+    ActorLicensesAndStatsResponse:
+      type: object
+      properties:
+        licenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseRecord'
+        stats:
+          type: object
+          additionalProperties: true
+      required: [licenses, stats]
+      additionalProperties: false
+    ActiveRepresentationResponse:
+      type: object
+      properties:
+        active:
+          type: boolean
+      required: [active]
+      additionalProperties: false
+    AgentActorDataResponse:
+      type: object
+      properties:
+        licensingRequests:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseRequestSummary'
+        licenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseRecord'
+      required: [licensingRequests, licenses]
+      additionalProperties: false

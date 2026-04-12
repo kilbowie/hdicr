@@ -1,0 +1,1035 @@
+openapi: 3.1.0
+info:
+  title: HDICR Identity Service API
+  version: 3.0.0
+  summary: Identity registry and identity-linking contract for Truly Imagined HDICR services.
+  description: >-
+    Defines the HTTP contract for actor registration, actor administration, identity-linking,
+    and identity-resolution endpoints exposed by the HDICR identity service.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.trulyimagined.com
+    description: Production API
+tags:
+  - name: Identity
+    description: Actor identity registration, lookup, and status endpoints.
+  - name: Identity Links
+    description: Endpoints for linking, reactivating, listing, and unlinking external identities.
+  - name: Admin
+    description: Administrative identity views exposed through the identity service.
+security:
+  - bearerAuth: []
+paths:
+  /v1/identity/register:
+    post:
+      tags: [Identity]
+      operationId: registerActor
+      summary: Register a new actor identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActorRegistrationRequest'
+      responses:
+        '201':
+          description: Actor registration created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorRegistrationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity:
+    get:
+      tags: [Identity]
+      operationId: listActors
+      summary: List actor identities
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated actor list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/{id}:
+    get:
+      tags: [Identity]
+      operationId: getActorById
+      summary: Get actor by ID
+      parameters:
+        - $ref: '#/components/parameters/ActorId'
+      responses:
+        '200':
+          description: Actor record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags: [Identity]
+      operationId: updateActor
+      summary: Update actor profile
+      parameters:
+        - $ref: '#/components/parameters/ActorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActorUpdateRequest'
+      responses:
+        '200':
+          description: Updated actor profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorUpdateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/actors/exists:
+    get:
+      tags: [Identity]
+      operationId: actorExistsByAuth0UserId
+      summary: Check whether an actor exists for an Auth0 user
+      parameters:
+        - $ref: '#/components/parameters/Auth0UserId'
+      responses:
+        '200':
+          description: Actor existence flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorExistsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/user-profile-id:
+    get:
+      tags: [Identity]
+      operationId: getUserProfileIdByAuth0UserId
+      summary: Resolve a TI user profile ID from Auth0 user ID
+      parameters:
+        - $ref: '#/components/parameters/Auth0UserId'
+      responses:
+        '200':
+          description: User profile resolution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileIdResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/registration-status:
+    get:
+      tags: [Identity]
+      operationId: getActorRegistrationStatus
+      summary: Get actor registration status for an Auth0 user
+      parameters:
+        - $ref: '#/components/parameters/Auth0UserId'
+      responses:
+        '200':
+          description: Registration status payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/link/by-provider:
+    get:
+      tags: [Identity Links]
+      operationId: getIdentityLinkByProviderAndProviderUser
+      summary: Resolve an identity link by provider tuple
+      parameters:
+        - $ref: '#/components/parameters/UserProfileId'
+        - $ref: '#/components/parameters/Provider'
+        - $ref: '#/components/parameters/ProviderUserId'
+      responses:
+        '200':
+          description: Identity link lookup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityLinkLookupResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/link/create:
+    post:
+      tags: [Identity Links]
+      operationId: createIdentityLink
+      summary: Create a new identity link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIdentityLinkRequest'
+      responses:
+        '200':
+          description: Identity link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityLinkMutationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/link/reactivate:
+    post:
+      tags: [Identity Links]
+      operationId: reactivateIdentityLink
+      summary: Reactivate an existing identity link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReactivateIdentityLinkRequest'
+      responses:
+        '200':
+          description: Identity link reactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/link/unlink-by-id:
+    post:
+      tags: [Identity Links]
+      operationId: unlinkIdentityById
+      summary: Unlink an identity provider by link ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnlinkIdentityByIdRequest'
+      responses:
+        '200':
+          description: Identity link rows updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityLinkRowsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/link/unlink-by-provider:
+    post:
+      tags: [Identity Links]
+      operationId: unlinkIdentityByProvider
+      summary: Unlink active identity links by provider name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnlinkIdentityByProviderRequest'
+      responses:
+        '200':
+          description: Identity link rows updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityLinkRowsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/links:
+    get:
+      tags: [Identity Links]
+      operationId: listIdentityLinks
+      summary: List identity links for a user profile
+      parameters:
+        - $ref: '#/components/parameters/UserProfileId'
+        - name: activeOnly
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Identity links list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityLinksResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/link/upsert:
+    post:
+      tags: [Identity Links]
+      operationId: upsertIdentityLink
+      summary: Upsert identity link by provider tuple
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Identity link upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/{id}/verify:
+    post:
+      tags: [Identity]
+      operationId: setActorVerificationStatus
+      summary: Set actor verification status
+      parameters:
+        - $ref: '#/components/parameters/ActorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Verification status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/verification-sessions:
+    get:
+      tags: [Identity]
+      operationId: getOpenVerificationSession
+      summary: Get the latest open manual verification session for an actor
+      parameters:
+        - name: actorId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Latest open verification session
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [Identity]
+      operationId: createVerificationSession
+      summary: Create a pending manual verification session request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Verification session created
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/verification-sessions/schedule:
+    post:
+      tags: [Identity]
+      operationId: scheduleVerificationSession
+      summary: Schedule or upsert a manual verification session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Verification session scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/verification-sessions/batch-latest:
+    post:
+      tags: [Identity]
+      operationId: batchGetLatestVerificationSessions
+      summary: Get latest verification session per actor in batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Latest sessions map
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/verification-sessions/complete:
+    post:
+      tags: [Identity]
+      operationId: completeVerificationSession
+      summary: Complete or fail a manual verification session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Verification session completion recorded
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/admin/users:
+    get:
+      tags: [Admin]
+      operationId: listAdminUsers
+      summary: List admin-visible users with actor linkage data
+      responses:
+        '200':
+          description: Admin user listing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUsersResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Auth0 RS256-signed JWT. Required on all endpoints (except OPTIONS
+        preflight). Scope enforcement is applied after signature verification.
+    hdicrOAuth2:
+      type: oauth2
+      description: >
+        OAuth 2.1 client credentials used by TI or any authorised HDICR client.
+        Tokens are acquired via POST /oauth/token with grant_type=client_credentials.
+        The required scope per endpoint determines which operations are permitted.
+      flows:
+        clientCredentials:
+          tokenUrl: https://{auth0Domain}/oauth/token
+          scopes:
+            hdicr:identity:read: Read actor identity records
+            hdicr:identity:write: Create and update actor identity records
+  parameters:
+    ActorId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Auth0UserId:
+      name: auth0UserId
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    UserProfileId:
+      name: userProfileId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Provider:
+      name: provider
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    ProviderUserId:
+      name: providerUserId
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  responses:
+    BadRequest:
+      description: Invalid request payload or query parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated caller lacks required scope or role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Request conflicts with current resource state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Unhandled server-side failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+    SuccessResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        success:
+          type: boolean
+      required: [success]
+    Actor:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Canonical subject identifier.
+        identitySubjectId:
+          type: string
+          format: uuid
+          description: Neutral alias for id to support non-TI tenant terminology.
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        stageName:
+          type: [string, 'null']
+          description: Tenant-facing display label (Truly Imagined naming).
+          x-tenant-specific: trulyimagined
+        displayName:
+          type: [string, 'null']
+          description: Neutral alias for stageName.
+        bio:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        profileImageUrl:
+          type: [string, 'null']
+          format: uri
+        verificationStatus:
+          type: [string, 'null']
+        isFoundingMember:
+          type: [boolean, 'null']
+          x-tenant-specific: trulyimagined
+        registryId:
+          type: [string, 'null']
+          x-tenant-specific: trulyimagined
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+      required: [id]
+    ActorEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        actor:
+          $ref: '#/components/schemas/Actor'
+      required: [actor]
+    ActorRegistrationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        auth0UserId:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+          minLength: 1
+        lastName:
+          type: string
+          minLength: 1
+        stageName:
+          type: [string, 'null']
+        bio:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+      required: [auth0UserId, email, firstName, lastName]
+    ActorRegistrationResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        success:
+          type: boolean
+        actor:
+          $ref: '#/components/schemas/Actor'
+      required: [success, actor]
+    ActorUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        actorId:
+          type: string
+          format: uuid
+        firstName:
+          type: [string, 'null']
+        lastName:
+          type: [string, 'null']
+        stageName:
+          type: [string, 'null']
+        bio:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        profileImageUrl:
+          type: [string, 'null']
+          format: uri
+      required: [actorId]
+    ActorUpdateResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        success:
+          type: boolean
+        actor:
+          $ref: '#/components/schemas/Actor'
+      required: [success, actor]
+    ActorListResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        actors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Actor'
+        pagination:
+          type: object
+          additionalProperties: false
+          properties:
+            limit:
+              type: integer
+            offset:
+              type: integer
+            total:
+              type: integer
+          required: [limit, offset, total]
+      required: [actors, pagination]
+    ActorExistsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        exists:
+          type: boolean
+      required: [exists]
+    UserProfileIdResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        userProfileId:
+          type: [string, 'null']
+          format: uuid
+      required: [userProfileId]
+    RegistrationStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        registered:
+          type: boolean
+        actorId:
+          type: [string, 'null']
+          format: uuid
+        registryId:
+          type: [string, 'null']
+        verificationStatus:
+          type: [string, 'null']
+      required: [registered]
+    RegistrationStatusResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          anyOf:
+            - $ref: '#/components/schemas/RegistrationStatus'
+            - type: 'null'
+      required: [status]
+    IdentityLink:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        providerUserId:
+          type: [string, 'null']
+        providerType:
+          type: [string, 'null']
+        verificationLevel:
+          type: [string, 'null']
+          enum: [low, medium, high, very-high, null]
+        assuranceLevel:
+          type: [string, 'null']
+          enum: [low, substantial, high, null]
+        credentialData:
+          type: [object, 'null']
+          additionalProperties: true
+        metadata:
+          type: [object, 'null']
+          additionalProperties: true
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+        verifiedAt:
+          type: [string, 'null']
+          format: date-time
+        linkedAt:
+          type: [string, 'null']
+          format: date-time
+        lastVerifiedAt:
+          type: [string, 'null']
+          format: date-time
+        isActive:
+          type: [boolean, 'null']
+      required: [id, provider]
+    IdentityLinkLookupResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        link:
+          anyOf:
+            - $ref: '#/components/schemas/IdentityLink'
+            - type: 'null'
+        id:
+          type: string
+          format: uuid
+        is_active:
+          type: boolean
+      anyOf:
+        - required: [link]
+        - required: [id]
+    CreateIdentityLinkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        userProfileId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        providerUserId:
+          type: string
+        providerType:
+          type: string
+        verificationLevel:
+          type: [string, 'null']
+          enum: [low, medium, high, very-high, null]
+        assuranceLevel:
+          type: [string, 'null']
+          enum: [low, substantial, high, null]
+        credentialData:
+          type: [object, 'null']
+          additionalProperties: true
+        metadata:
+          type: [object, 'null']
+          additionalProperties: true
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+      required: [userProfileId, provider, providerUserId, providerType]
+    ReactivateIdentityLinkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        linkId:
+          type: string
+          format: uuid
+        verificationLevel:
+          type: [string, 'null']
+          enum: [low, medium, high, very-high, null]
+        assuranceLevel:
+          type: [string, 'null']
+          enum: [low, substantial, high, null]
+        credentialData:
+          type: [object, 'null']
+          additionalProperties: true
+        metadata:
+          type: [object, 'null']
+          additionalProperties: true
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+      required: [linkId]
+    IdentityLinkMutationResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        success:
+          type: boolean
+        linkId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        verificationLevel:
+          type: [string, 'null']
+        message:
+          type: string
+    UnlinkIdentityByIdRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        linkId:
+          type: string
+          format: uuid
+        userProfileId:
+          type: string
+          format: uuid
+      required: [linkId, userProfileId]
+    UnlinkIdentityByProviderRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+        userProfileId:
+          type: string
+          format: uuid
+      required: [provider, userProfileId]
+    IdentityLinkRowsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: [rows]
+    IdentityLinksResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        links:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      anyOf:
+        - required: [rows]
+        - required: [links]
+    AdminUser:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        auth0_user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+        username:
+          type: [string, 'null']
+        legal_name:
+          type: [string, 'null']
+        professional_name:
+          type: [string, 'null']
+        profile_completed:
+          type: [boolean, 'null']
+        is_verified:
+          type: [boolean, 'null']
+        is_pro:
+          type: [boolean, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        actor_id:
+          type: [string, 'null']
+          format: uuid
+        first_name:
+          type: [string, 'null']
+        last_name:
+          type: [string, 'null']
+        stage_name:
+          type: [string, 'null']
+        verification_status:
+          type: [string, 'null']
+        registry_id:
+          type: [string, 'null']
+      required: [id, auth0_user_id, email, role, created_at, updated_at]
+    AdminUsersResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUser'
+        total:
+          type: integer
+      required: [users, total]

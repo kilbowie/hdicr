@@ -1,0 +1,643 @@
+openapi: 3.1.0
+info:
+  title: HDICR Consent Service API
+  version: 3.0.0
+  summary: Immutable consent ledger contract for HDICR actor consent operations.
+  description: >-
+    Defines consent grant, revoke, check, history, and actor-context resolution endpoints.
+    Consent records are append-only entries in consent_log and are never deleted in-place.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.trulyimagined.com
+    description: Production API
+tags:
+  - name: Consent
+    description: Consent grant, revoke, checks, and history.
+security:
+  - bearerAuth: []
+paths:
+  /v1/consent/grant:
+    post:
+      tags: [Consent]
+      operationId: grantConsent
+      summary: Append a consent grant event to the immutable ledger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantConsentRequest'
+      responses:
+        '201':
+          description: Consent grant appended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantConsentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/consent/revoke:
+    post:
+      tags: [Consent]
+      operationId: revokeConsent
+      summary: Append a consent revocation event to the immutable ledger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeConsentRequest'
+      responses:
+        '200':
+          description: Consent revocation appended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeConsentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/consent/check:
+    get:
+      tags: [Consent]
+      operationId: checkConsent
+      summary: Check current grant state for an actor consent type
+      parameters:
+        - $ref: '#/components/parameters/ActorIdQuery'
+        - $ref: '#/components/parameters/ConsentTypeQuery'
+        - $ref: '#/components/parameters/ProjectIdQuery'
+      responses:
+        '200':
+          description: Consent check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/consent/{actorId}:
+    get:
+      tags: [Consent]
+      operationId: listConsentHistoryByActorId
+      summary: List immutable consent ledger entries for an actor
+      parameters:
+        - $ref: '#/components/parameters/ActorIdPath'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/ActionFilter'
+      responses:
+        '200':
+          description: Consent ledger summary and history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentHistoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/consent/actor-context:
+    get:
+      tags: [Consent]
+      operationId: resolveActorContextByAuth0UserId
+      summary: Resolve actor context for authenticated user mapping
+      parameters:
+        - $ref: '#/components/parameters/Auth0UserId'
+      responses:
+        '200':
+          description: Actor context resolution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActorContextResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/consent/enforcement/check:
+    post:
+      tags: [Consent]
+      operationId: checkConsentEnforcement
+      summary: Evaluate whether a requested action passes consent enforcement rules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Enforcement evaluation result
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Auth0 RS256-signed JWT. Required on all endpoints (except OPTIONS
+        preflight). Scope enforcement is applied after signature verification.
+    hdicrOAuth2:
+      type: oauth2
+      description: >
+        OAuth 2.1 client credentials used by TI or any authorised HDICR client.
+        Tokens are acquired via POST /oauth/token with grant_type=client_credentials.
+        The required scope per endpoint determines which operations are permitted.
+      flows:
+        clientCredentials:
+          tokenUrl: https://{auth0Domain}/oauth/token
+          scopes:
+            hdicr:consent:read: Read consent records and ledger entries
+            hdicr:consent:write: Grant or revoke consent entries
+      name: actorId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ActorIdQuery:
+      name: actorId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Auth0UserId:
+      name: auth0UserId
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    ConsentTypeQuery:
+      name: consentType
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    ProjectIdQuery:
+      name: projectId
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+    ActionFilter:
+      name: action
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/ConsentAction'
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  responses:
+    BadRequest:
+      description: Invalid request payload or query parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated caller lacks required scope or role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Request conflicts with current consent state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ConsentAction:
+      type: string
+      enum: [granted, revoked]
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+      additionalProperties: true
+    ConsentScope:
+      type: object
+      properties:
+        projectId:
+          type: string
+        projectName:
+          type: string
+        projectDescription:
+          type: string
+        duration:
+          type: object
+          properties:
+            startDate:
+              type: string
+              format: date-time
+            endDate:
+              type: string
+              format: date-time
+          additionalProperties: false
+        usageTypes:
+          type: array
+          items:
+            type: string
+        territories:
+          type: array
+          items:
+            type: string
+        exclusions:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+    ConsentLedgerRecord:
+      type: object
+      description: Immutable append-only ledger row from consent_log.
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/ConsentAction'
+        consentType:
+          type: string
+        scope:
+          $ref: '#/components/schemas/ConsentScope'
+        projectName:
+          type: [string, 'null']
+        projectDescription:
+          type: [string, 'null']
+        timestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [id, actorId, action, consentType, scope, timestamp]
+      additionalProperties: false
+    GrantConsentRequest:
+      type: object
+      properties:
+        actorId:
+          type: string
+          format: uuid
+        consentType:
+          type: string
+        scope:
+          $ref: '#/components/schemas/ConsentScope'
+        requesterId:
+          type: string
+        requesterType:
+          type: string
+          enum: [actor, agent, studio, admin, enterprise]
+      required: [actorId, consentType]
+      additionalProperties: false
+    GrantConsentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        consent:
+          type: object
+          properties:
+            consentId:
+              type: string
+              format: uuid
+            actorId:
+              type: string
+              format: uuid
+            action:
+              $ref: '#/components/schemas/ConsentAction'
+            consentType:
+              type: string
+            scope:
+              $ref: '#/components/schemas/ConsentScope'
+            grantedAt:
+              type: string
+              format: date-time
+            projectName:
+              type: [string, 'null']
+          required: [consentId, actorId, action, consentType, scope, grantedAt]
+          additionalProperties: false
+      required: [success, message, consent]
+      additionalProperties: false
+    RevokeConsentRequest:
+      type: object
+      properties:
+        actorId:
+          type: string
+          format: uuid
+        consentId:
+          type: string
+          format: uuid
+        consentType:
+          type: string
+        projectId:
+          type: string
+        reason:
+          type: string
+      required: [actorId]
+      additionalProperties: false
+      description: At least one of consentId, consentType, or projectId must be provided.
+    RevokeConsentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        revocation:
+          type: object
+          properties:
+            revocationId:
+              type: string
+              format: uuid
+            actorId:
+              type: string
+              format: uuid
+            action:
+              $ref: '#/components/schemas/ConsentAction'
+            consentType:
+              type: string
+            revokedAt:
+              type: string
+              format: date-time
+            reason:
+              type: string
+          required: [revocationId, actorId, action, consentType, revokedAt, reason]
+          additionalProperties: false
+      required: [success, message, revocation]
+      additionalProperties: false
+    ConsentSnapshot:
+      type: object
+      properties:
+        consentId:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+        consentType:
+          type: string
+        scope:
+          $ref: '#/components/schemas/ConsentScope'
+        grantedAt:
+          type: string
+          format: date-time
+        projectName:
+          type: [string, 'null']
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+        isExpired:
+          type: boolean
+      additionalProperties: false
+    LatestAction:
+      type: object
+      properties:
+        action:
+          $ref: '#/components/schemas/ConsentAction'
+        timestamp:
+          type: string
+          format: date-time
+        reason:
+          type: [string, 'null']
+      required: [action, timestamp]
+      additionalProperties: false
+    ConsentCheckResponse:
+      type: object
+      properties:
+        isGranted:
+          type: boolean
+        message:
+          type: string
+        actorId:
+          type: string
+          format: uuid
+        consentType:
+          type: string
+        projectId:
+          type: [string, 'null']
+        consent:
+          oneOf:
+            - $ref: '#/components/schemas/ConsentSnapshot'
+            - type: 'null'
+        latestAction:
+          $ref: '#/components/schemas/LatestAction'
+      required: [isGranted]
+      additionalProperties: false
+    ConsentSummaryCounts:
+      type: object
+      properties:
+        active:
+          type: integer
+        revoked:
+          type: integer
+        expired:
+          type: integer
+        totalRecords:
+          type: integer
+      required: [active, revoked, expired, totalRecords]
+      additionalProperties: false
+    ConsentBuckets:
+      type: object
+      properties:
+        active:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentLedgerRecord'
+        revoked:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentLedgerRecord'
+        expired:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentLedgerRecord'
+      required: [active, revoked, expired]
+      additionalProperties: false
+    ConsentHistoryEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/ConsentAction'
+        consentType:
+          type: string
+        scope:
+          $ref: '#/components/schemas/ConsentScope'
+        projectName:
+          type: [string, 'null']
+        timestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [id, action, consentType, scope, timestamp]
+      additionalProperties: false
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+        hasMore:
+          type: boolean
+      required: [limit, offset, total, hasMore]
+      additionalProperties: false
+    ConsentHistoryResponse:
+      type: object
+      properties:
+        actorId:
+          type: string
+          format: uuid
+        summary:
+          $ref: '#/components/schemas/ConsentSummaryCounts'
+        consents:
+          $ref: '#/components/schemas/ConsentBuckets'
+        fullHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentHistoryEntry'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        message:
+          type: string
+      required: [actorId, summary, consents, fullHistory, pagination, message]
+      additionalProperties: false
+    ActorContext:
+      type: object
+      properties:
+        userProfileId:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+      required: [userProfileId, actorId]
+      additionalProperties: false
+    ActorContextResponse:
+      type: object
+      properties:
+        context:
+          oneOf:
+            - $ref: '#/components/schemas/ActorContext'
+            - type: 'null'
+      required: [context]
+      additionalProperties: false

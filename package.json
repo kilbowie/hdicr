@@ -1,0 +1,36 @@
+{
+  "name": "hdicr-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HDICR extracted service repository",
+  "workspaces": [
+    "services/*",
+    "shared/*",
+    "infra/*"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @trulyimagined/types build && pnpm --filter @trulyimagined/utils build && pnpm --filter @trulyimagined/middleware build && pnpm --filter @trulyimagined/database build && pnpm --filter @trulyimagined/identity-service build && pnpm --filter @trulyimagined/consent-service build && pnpm --filter @trulyimagined/licensing-service build && pnpm --filter @trulyimagined/representation-service build",
+    "type-check": "pnpm --filter @trulyimagined/types type-check && pnpm --filter @trulyimagined/utils type-check && pnpm --filter @trulyimagined/middleware type-check && pnpm --filter @trulyimagined/database type-check && pnpm --filter @trulyimagined/identity-service type-check && pnpm --filter @trulyimagined/consent-service type-check && pnpm --filter @trulyimagined/licensing-service type-check && pnpm --filter @trulyimagined/representation-service type-check",
+    "test": "pnpm --filter @trulyimagined/identity-service test && pnpm --filter @trulyimagined/consent-service test && pnpm --filter @trulyimagined/licensing-service test && pnpm --filter @trulyimagined/representation-service test",
+    "sam:validate": "sam validate -t infra/template.yaml"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "pnpm": {
+    "overrides": {
+      "d3-color": "^3.1.0",
+      "picomatch@2": "2.3.2",
+      "picomatch@4": "4.0.4",
+      "minimatch": ">=9.0.7",
+      "brace-expansion@1": ">=1.1.13",
+      "brace-expansion@2": ">=2.0.3",
+      "glob": ">=10.5.0"
+    }
+  }
+}

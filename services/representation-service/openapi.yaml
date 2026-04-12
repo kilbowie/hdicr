@@ -1,0 +1,604 @@
+openapi: 3.0.0
+info:
+  title: Representation Service API
+  description: |
+    HDICR Representation Service handles actor-agent representation relationships,
+    including requests, approvals, and lifecycle management.
+
+    **Status:** SEP-023 (Define OpenAPI spec - HDICR Representation service)
+    **Part of:** SEP-026 (Promote representation domain to full HDICR service)
+  version: 1.0.0
+  contact:
+    name: HDICR Platform Team
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.hdicr.platform/v1/representation
+    description: Production representation service
+  - url: http://localhost:3001/v1/representation
+    description: Local development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Auth0 JWT token
+
+  schemas:
+    Actor:
+      type: object
+      required:
+        - id
+        - auth0_user_id
+        - email
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Actor unique identifier
+        auth0_user_id:
+          type: string
+          description: Auth0 user ID
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Agent:
+      type: object
+      required:
+        - id
+        - auth0_user_id
+        - registry_id
+        - agency_name
+      properties:
+        id:
+          type: string
+          format: uuid
+        auth0_user_id:
+          type: string
+        registry_id:
+          type: string
+          description: Agent registry identifier
+        agency_name:
+          type: string
+        verification_status:
+          type: string
+          enum: [verified, pending, denied]
+        profile_completed:
+          type: boolean
+        profile_image_url:
+          type: string
+          format: uri
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        website_url:
+          type: string
+          format: uri
+          nullable: true
+
+    RepresentationRequest:
+      type: object
+      required:
+        - id
+        - actor_id
+        - agent_id
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, approved, rejected, withdrawn]
+        response_note:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Relationship:
+      type: object
+      required:
+        - id
+        - actor_id
+        - agent_id
+        - started_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        ended_by:
+          type: string
+          enum: [actor, agent]
+          nullable: true
+        ended_by_auth0_user_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+
+security:
+  - BearerAuth: []
+
+paths:
+  /actor:
+    get:
+      summary: Get actor by Auth0 user ID
+      operationId: getActorByAuth0
+      security: []
+      parameters:
+        - name: auth0UserId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Actor found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actor:
+                    $ref: '#/components/schemas/Actor'
+                    nullable: true
+        '400':
+          description: Missing required parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /agent:
+    get:
+      summary: Get agent by Auth0 user ID
+      operationId: getAgentByAuth0
+      security: []
+      parameters:
+        - name: auth0UserId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent:
+                    $ref: '#/components/schemas/Agent'
+                    nullable: true
+        '400':
+          description: Missing required parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /agent-by-registry:
+    get:
+      summary: Get agent by registry ID
+      operationId: getAgentByRegistry
+      security: []
+      parameters:
+        - name: registryId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent:
+                    $ref: '#/components/schemas/Agent'
+                    nullable: true
+        '400':
+          description: Missing required parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /active:
+    get:
+      summary: Get active representation for actor
+      operationId: getActiveRepresentation
+      security: []
+      parameters:
+        - name: actorId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active relationship found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationship:
+                    $ref: '#/components/schemas/Relationship'
+                    nullable: true
+
+  /request/pending:
+    get:
+      summary: Check if pending request exists
+      operationId: checkPendingRequest
+      security: []
+      parameters:
+        - name: actorId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: agentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Pending status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending:
+                    type: boolean
+
+  /request:
+    post:
+      summary: Create representation request
+      operationId: createRepresentationRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - actorId
+                - agentId
+              properties:
+                actorId:
+                  type: string
+                  format: uuid
+                agentId:
+                  type: string
+                  format: uuid
+                message:
+                  type: string
+                  nullable: true
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    $ref: '#/components/schemas/RepresentationRequest'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: Get request by ID
+      operationId: getRepresentationRequest
+      security: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    $ref: '#/components/schemas/RepresentationRequest'
+                    nullable: true
+
+  /requests/incoming:
+    get:
+      summary: List incoming requests for agent
+      operationId: listIncomingRequests
+      security: []
+      parameters:
+        - name: agentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RepresentationRequest'
+
+  /requests/outgoing:
+    get:
+      summary: List outgoing requests from actor
+      operationId: listOutgoingRequests
+      security: []
+      parameters:
+        - name: actorId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RepresentationRequest'
+
+  /request/update:
+    post:
+      summary: Update request status
+      operationId: updateRepresentationRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - requestId
+                - action
+              properties:
+                requestId:
+                  type: string
+                  format: uuid
+                action:
+                  type: string
+                  enum: [approve, reject, withdraw]
+                responseNote:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Request updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    $ref: '#/components/schemas/RepresentationRequest'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /relationship/active:
+    get:
+      summary: Check if actor has active relationship
+      operationId: checkActiveRelationship
+      security: []
+      parameters:
+        - name: actorId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+
+  /relationship:
+    post:
+      summary: Create representation relationship
+      operationId: createRelationship
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - actorId
+                - agentId
+                - representationRequestId
+              properties:
+                actorId:
+                  type: string
+                  format: uuid
+                agentId:
+                  type: string
+                  format: uuid
+                representationRequestId:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Relationship created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: Get relationship by ID
+      operationId: getRelationship
+      security: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Relationship found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationship:
+                    $ref: '#/components/schemas/Relationship'
+                    nullable: true
+
+  /relationship/end:
+    post:
+      summary: End representation relationship
+      operationId: endRelationship
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - relationshipId
+                - endedByAuth0UserId
+                - endedBy
+              properties:
+                relationshipId:
+                  type: string
+                  format: uuid
+                endedByAuth0UserId:
+                  type: string
+                endedBy:
+                  type: string
+                  enum: [actor, agent]
+      responses:
+        '200':
+          description: Relationship ended
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  relationship:
+                    $ref: '#/components/schemas/Relationship'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

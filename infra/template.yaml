@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: HDICR Service - Lambda + API Gateway
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs20.x
+    Environment:
+      Variables:
+        NODE_ENV: !Ref Environment
+        AUTH0_DOMAIN: !Ref Auth0Domain
+        AUTH0_AUDIENCE: !Ref Auth0Audience
+        AWS_REGION: !Ref AWS::Region
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - development
+      - staging
+      - production
+
+  HDICRDatabaseURL:
+    Type: String
+    NoEcho: true
+
+  Auth0Domain:
+    Type: String
+
+  Auth0Audience:
+    Type: String
+    Default: https://hdicr.trulyimagined.com
+
+  S3BucketName:
+    Type: String
+    Default: trulyimagined-media
+
+  CustomDomainName:
+    Type: String
+    Default: hdicr.trulyimagined.com
+
+  CertificateArn:
+    Type: String
+
+Resources:
+  HDICRApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: hdicr-api
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'https://trulyimagined.com'"
+
+  IdentityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub hdicr-identity-${Environment}
+      CodeUri: ../services/identity-service/dist
+      Handler: index.handler
+      Environment:
+        Variables:
+          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+          S3_BUCKET_NAME: !Ref S3BucketName
+      Events:
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /v1/identity/{proxy+}
+            Method: ANY
+
+  ConsentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub hdicr-consent-${Environment}
+      CodeUri: ../services/consent-service/dist
+      Handler: index.handler
+      Environment:
+        Variables:
+          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+      Events:
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /v1/consent/{proxy+}
+            Method: ANY
+
+  LicensingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub hdicr-licensing-${Environment}
+      CodeUri: ../services/licensing-service/dist
+      Handler: index.handler
+      Environment:
+        Variables:
+          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+      Events:
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /v1/license/{proxy+}
+            Method: ANY
+
+  RepresentationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub hdicr-representation-${Environment}
+      CodeUri: ../services/representation-service/dist
+      Handler: index.handler
+      Environment:
+        Variables:
+          HDICR_DATABASE_URL: !Ref HDICRDatabaseURL
+      Events:
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /v1/representation/{proxy+}
+            Method: ANY
+
+  HDICRCustomDomain:
+    Type: AWS::ApiGateway::DomainName
+    Properties:
+      DomainName: !Ref CustomDomainName
+      RegionalCertificateArn: !Ref CertificateArn
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  HDICRBasePathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    DependsOn:
+      - HDICRApiStage
+      - HDICRCustomDomain
+    Properties:
+      DomainName: !Ref HDICRCustomDomain
+      RestApiId: !Ref HDICRApi
+      Stage: prod
+
+Outputs:
+  ApiEndpoint:
+    Value: !Sub https://${HDICRApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
+  CustomDomain:
+    Value: !Ref CustomDomainName
