@@ -1,0 +1,21 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "hdicr-prod"
+s3_bucket = "hdicr-sam-artifacts-1776018163"
+region = "eu-west-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+  "Environment=production",
+  "Auth0Domain=kilbowieconsulting.uk.auth0.com",
+  "Auth0Audience=https://hdicr.trulyimagined.com",
+  "S3BucketName=trulyimagined-media",
+  "CustomDomainName=hdicr.trulyimagined.com",
+  "CertificateArn=arn:aws:acm:eu-west-1:440779547223:certificate/769f5ac8-d0a7-48f4-a822-17348373bab9",
+  "HDICRDatabaseURL={{resolve:secretsmanager:/hdicr/prod/db/url:SecretString}}",
+  "AUTH0ClientId={{resolve:secretsmanager:/hdicr/prod/auth0/client_id:SecretString}}",
+  "AUTH0ClientSecret={{resolve:secretsmanager:/hdicr/prod/auth0/client_secret:SecretString}}",
+  "StripeSecretKey={{resolve:secretsmanager:/hdicr/prod/stripe/secret_key:SecretString}}",
+  "StripeWebhookSecret={{resolve:secretsmanager:/hdicr/prod/stripe/webhook_secret:SecretString}}",
+  "JwtSigningKey={{resolve:secretsmanager:/hdicr/prod/jwt/signing_key:SecretString}}"
+]
