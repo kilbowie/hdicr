@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: HDICR Service - Lambda + API Gateway
 
@@ -12,6 +12,15 @@ Globals:
         NODE_ENV: !Ref Environment
         AUTH0_DOMAIN: !Ref Auth0Domain
         AUTH0_AUDIENCE: !Ref Auth0Audience
+        AUTH0_CLIENT_ID: !Ref AUTH0ClientId
+        AUTH0_CLIENT_SECRET: !Ref AUTH0ClientSecret
+        STRIPE_SECRET_KEY: !Ref StripeSecretKey
+        STRIPE_WEBHOOK_SECRET: !Ref StripeWebhookSecret
+        JWT_SIGNING_KEY: !Ref JwtSigningKey
+        HDICR_DEFAULT_TENANT_ID: !Ref HDICRDefaultTenantId
+        AUTH0_ROLES_CLAIM_NAMESPACE: !Ref Auth0RolesClaimNamespace
+        AUTH0_TENANT_ID_CLAIM_NAMESPACE: !Ref Auth0TenantIdClaimNamespace
+        DB_POOL_SIZE: !Ref DBPoolSize
 
 Parameters:
   Environment:
@@ -33,6 +42,22 @@ Parameters:
     Type: String
     Default: https://hdicr.trulyimagined.com
 
+  HDICRDefaultTenantId:
+    Type: String
+    Default: trulyimagined
+
+  Auth0RolesClaimNamespace:
+    Type: String
+    Default: https://trulyimagined.com/roles
+
+  Auth0TenantIdClaimNamespace:
+    Type: String
+    Default: https://trulyimagined.com/tenant_id
+
+  DBPoolSize:
+    Type: String
+    Default: "20"
+
   S3BucketName:
     Type: String
     Default: trulyimagined-media
@@ -43,6 +68,26 @@ Parameters:
 
   CertificateArn:
     Type: String
+
+  AUTH0ClientId:
+    Type: String
+    NoEcho: true
+
+  AUTH0ClientSecret:
+    Type: String
+    NoEcho: true
+
+  StripeSecretKey:
+    Type: String
+    NoEcho: true
+
+  StripeWebhookSecret:
+    Type: String
+    NoEcho: true
+
+  JwtSigningKey:
+    Type: String
+    NoEcho: true
 
 Resources:
   HDICRApi:
