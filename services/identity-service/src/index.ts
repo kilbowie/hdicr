@@ -90,6 +90,13 @@ const UnlinkIdentityByProviderSchema = z.object({
   userProfileId: NonEmptyString,
 });
 
+const VerifyIdentityConfirmedSchema = z.object({
+  ti_user_id: NonEmptyString,
+  verification_session_id: NonEmptyString,
+  verified_at: z.string().trim().optional(),
+  assurance_level: NonEmptyString.default('high'),
+});
+
 const RegisterActorSchema = z.object({
   auth0UserId: NonEmptyString,
   email: z.string().trim().email(),
@@ -277,6 +284,10 @@ export const handler: APIGatewayProxyHandler = async (event) => {
 
     if (path === '/v1/identity/link/upsert' && httpMethod === 'POST') {
       return withCorrelation(await upsertIdentityLink(event, tenantId));
+    }
+
+    if (path === '/identity/verify-confirmed' && httpMethod === 'POST') {
+      return withCorrelation(await verifyIdentityConfirmed(event, tenantId));
     }
 
     if (path === '/v1/identity/verification-sessions' && httpMethod === 'GET') {
@@ -849,6 +860,109 @@ async function upsertIdentityLink(event: APIGatewayProxyEvent, tenantId: string)
     body: JSON.stringify({
       link: result.rows[0] || null,
       id: result.rows[0]?.id,
+    }),
+  };
+}
+
+/**
+ * Sync verified Stripe Identity outcome from TI webhook processing.
+ * Route: POST /identity/verify-confirmed
+ */
+async function verifyIdentityConfirmed(event: APIGatewayProxyEvent, tenantId: string) {
+  const parsedBody = parseJsonBody(event, VerifyIdentityConfirmedSchema);
+  if (!parsedBody.success) {
+    return parsedBody.response;
+  }
+
+  const { ti_user_id, verification_session_id, verified_at, assurance_level } = parsedBody.data;
+
+  const profileResult = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, auth0_user_id
+     FROM user_profiles
+     WHERE tenant_id = $2
+       AND deleted_at IS NULL
+       AND (id::text = $1 OR auth0_user_id = $1)
+     LIMIT 1`,
+    [ti_user_id, tenantId]
+  );
+
+  if (profileResult.rows.length === 0) {
+    return {
+      statusCode: 404,
+      headers: corsHeaders,
+      body: JSON.stringify({
+        error: 'User profile not found',
+        ti_user_id,
+      }),
+    };
+  }
+
+  const userProfileId = profileResult.rows[0].id as string;
+  const auth0UserId = profileResult.rows[0].auth0_user_id as string;
+  const verifiedAt = verified_at || new Date().toISOString();
+
+  const identityLinkResult = await db.queryWithTenant(
+    tenantId,
+    `INSERT INTO identity_links (
+       user_profile_id,
+       provider,
+       provider_user_id,
+       provider_type,
+       verification_level,
+       assurance_level,
+       credential_data,
+       metadata,
+       is_active,
+       last_verified_at
+     )
+     VALUES ($1::uuid, 'stripe-identity', $2, 'kyc', 'high', $3, '{}'::jsonb, $4::jsonb, TRUE, NOW())
+     ON CONFLICT (user_profile_id, provider, provider_user_id)
+     DO UPDATE SET
+       verification_level = 'high',
+       assurance_level = EXCLUDED.assurance_level,
+       metadata = COALESCE(identity_links.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+       is_active = TRUE,
+       last_verified_at = NOW(),
+       updated_at = NOW()
+     RETURNING id, user_profile_id, provider_user_id, assurance_level, last_verified_at`,
+    [
+      userProfileId,
+      verification_session_id,
+      assurance_level,
+      JSON.stringify({
+        source: 'ti-webhook',
+        ti_user_id,
+        verification_session_id,
+        verified_at: verifiedAt,
+      }),
+    ]
+  );
+
+  const actorUpdateResult = await db.queryWithTenant(
+    tenantId,
+    `UPDATE actors
+     SET verification_status = 'verified',
+         verified_at = COALESCE(verified_at, NOW()),
+         updated_at = NOW()
+     WHERE tenant_id = $3
+       AND deleted_at IS NULL
+       AND (user_profile_id = $1::uuid OR auth0_user_id = $2)
+     RETURNING id, verification_status, verified_at`,
+    [userProfileId, auth0UserId, tenantId]
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({
+      success: true,
+      ti_user_id,
+      user_profile_id: userProfileId,
+      verification_session_id,
+      assurance_level,
+      actor_updated: actorUpdateResult.rows.length > 0,
+      identity_link_id: identityLinkResult.rows[0]?.id,
     }),
   };
 }

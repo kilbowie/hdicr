@@ -117,6 +117,12 @@ Resources:
             RestApiId: !Ref HDICRApi
             Path: /v1/identity/{proxy+}
             Method: ANY
+        VerifyConfirmed:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /identity/verify-confirmed
+            Method: POST
 
   ConsentFunction:
     Type: AWS::Serverless::Function
