@@ -4,10 +4,10 @@
  * Auth0 JWT validation and role extraction
  */
 
-import { APIGatewayProxyEvent } from 'aws-lambda';
-import jwt, { JwtHeader, SigningKeyCallback } from 'jsonwebtoken';
-import jwksClient from 'jwks-rsa';
-import type { AuthUser } from '@trulyimagined/types';
+import { APIGatewayProxyEvent } from "aws-lambda";
+import jwt, { JwtHeader, SigningKeyCallback } from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
+import type { AuthUser } from "@trulyimagined/types";
 
 // ==================== TYPE INTERFACES ====================
 
@@ -56,7 +56,7 @@ const client = jwksClient({
 });
 
 function getKey(header: JwtHeader, callback: SigningKeyCallback) {
-  client.getSigningKey(header.kid ?? '', (err, key) => {
+  client.getSigningKey(header.kid ?? "", (err, key) => {
     if (err) {
       callback(err);
       return;
@@ -66,17 +66,24 @@ function getKey(header: JwtHeader, callback: SigningKeyCallback) {
   });
 }
 
-function getStringClaim(decoded: Record<string, unknown>, key?: string): string | undefined {
+function getStringClaim(
+  decoded: Record<string, unknown>,
+  key?: string,
+): string | undefined {
   if (!key) {
     return undefined;
   }
 
   const value = decoded[key];
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
 }
 
 function getSubjectClientId(sub: unknown): string | undefined {
-  return typeof sub === 'string' && sub.endsWith('@clients') ? sub.slice(0, -8) : undefined;
+  return typeof sub === "string" && sub.endsWith("@clients")
+    ? sub.slice(0, -8)
+    : undefined;
 }
 
 // ==================== AUTH0 JWT VALIDATION ====================
@@ -87,12 +94,12 @@ export type AuthValidationResult = {
 };
 
 export async function validateAuth0TokenWithStatus(
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
 ): Promise<AuthValidationResult> {
   const authHeader = event.headers.Authorization || event.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.error('[AUTH] Missing or invalid authorization header');
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.error("[AUTH] Missing or invalid authorization header");
     return { user: null, errorStatus: 401 };
   }
 
@@ -107,20 +114,20 @@ export async function validateAuth0TokenWithStatus(
         {
           audience: process.env.AUTH0_AUDIENCE,
           issuer: `https://${process.env.AUTH0_DOMAIN}/`,
-          algorithms: ['RS256'],
+          algorithms: ["RS256"],
         },
         (err, payload) => {
           if (err || !payload) {
-            reject(err ?? new Error('Empty JWT payload'));
+            reject(err ?? new Error("Empty JWT payload"));
           } else {
             resolve(payload as JwtClaims);
           }
-        }
+        },
       );
     });
 
     if (!decoded.sub) {
-      console.error('[AUTH] Invalid token structure: missing sub');
+      console.error("[AUTH] Invalid token structure: missing sub");
       return { user: null, errorStatus: 403 };
     }
 
@@ -128,14 +135,18 @@ export async function validateAuth0TokenWithStatus(
     // user RBAC tokens from Auth0 may use a 'permissions' array instead.
     const scopes: string[] = Array.isArray(decoded.permissions)
       ? (decoded.permissions as string[])
-      : typeof decoded.scope === 'string' && decoded.scope.length > 0
-        ? decoded.scope.split(' ')
+      : typeof decoded.scope === "string" && decoded.scope.length > 0
+        ? decoded.scope.split(" ")
         : [];
 
-    const rolesClaimNamespace = process.env.AUTH0_ROLES_CLAIM_NAMESPACE?.trim() ?? '';
-    const clientId = decoded.client_id || decoded.azp || getSubjectClientId(decoded.sub);
-    const tenantClaimNamespace = process.env.AUTH0_TENANT_ID_CLAIM_NAMESPACE?.trim();
-    const defaultTenantId = process.env.HDICR_DEFAULT_TENANT_ID?.trim() || 'trulyimagined';
+    const rolesClaimNamespace =
+      process.env.AUTH0_ROLES_CLAIM_NAMESPACE?.trim() ?? "";
+    const clientId =
+      decoded.client_id || decoded.azp || getSubjectClientId(decoded.sub);
+    const tenantClaimNamespace =
+      process.env.AUTH0_TENANT_ID_CLAIM_NAMESPACE?.trim();
+    const defaultTenantId =
+      process.env.HDICR_DEFAULT_TENANT_ID?.trim() || "trulyimagined";
     const tenantId =
       getStringClaim(decoded, tenantClaimNamespace) ||
       decoded.tenant_id ||
@@ -149,7 +160,10 @@ export async function validateAuth0TokenWithStatus(
       emailVerified: decoded.email_verified ?? false,
       name: decoded.name,
       picture: decoded.picture,
-      roles: (rolesClaimNamespace ? (decoded[rolesClaimNamespace] as string[]) : undefined) ?? [],
+      roles:
+        (rolesClaimNamespace
+          ? (decoded[rolesClaimNamespace] as string[])
+          : undefined) ?? [],
       clientId,
       tenantId,
       scopes,
@@ -157,16 +171,18 @@ export async function validateAuth0TokenWithStatus(
 
     const identity = user.email ? user.email : `M2M:${user.sub}`;
     console.log(
-      `[AUTH] Authenticated: ${identity} (tenant: ${tenantId}, scopes: ${scopes.join(', ') || 'none'})`
+      `[AUTH] Authenticated: ${identity} (tenant: ${tenantId}, scopes: ${scopes.join(", ") || "none"})`,
     );
     return { user };
   } catch (error) {
-    console.error('[AUTH] Token validation failed:', error);
+    console.error("[AUTH] Token validation failed:", error);
     return { user: null, errorStatus: 403 };
   }
 }
 
-export async function validateAuth0Token(event: APIGatewayProxyEvent): Promise<AuthUser | null> {
+export async function validateAuth0Token(
+  event: APIGatewayProxyEvent,
+): Promise<AuthUser | null> {
   const result = await validateAuth0TokenWithStatus(event);
   return result.user;
 }
@@ -178,7 +194,7 @@ export async function validateAuth0Token(event: APIGatewayProxyEvent): Promise<A
  */
 export function requireAuth(user: AuthUser | null): AuthUser {
   if (!user) {
-    throw new Error('Unauthorized');
+    throw new Error("Unauthorized");
   }
   return user;
 }
@@ -191,7 +207,7 @@ export function requireRole(user: AuthUser, allowedRoles: string[]) {
   const hasRole = userRoles.some((role) => allowedRoles.includes(role));
 
   if (!hasRole) {
-    throw new Error('Forbidden: Insufficient permissions');
+    throw new Error("Forbidden: Insufficient permissions");
   }
 }
 
@@ -217,18 +233,21 @@ export function hasScope(user: AuthUser | null, scope: string): boolean {
 // to avoid coupling this package to TI-specific role naming.
 // Define equivalent helpers (isActor, isAgent, isEnterprise, …) in each consuming application.
 function isAgent(user: AuthUser | null): boolean {
-  return hasRole(user, 'Agent');
+  return hasRole(user, "Agent");
 }
 
 function isAdmin(user: AuthUser | null): boolean {
-  return hasRole(user, 'Admin');
+  return hasRole(user, "Admin");
 }
 
 /**
  * Check if user can access actor's resources
  * - User must be the actor themselves, their agent, or an admin
  */
-export function canAccessActorResources(user: AuthUser, actorAuth0Id: string): boolean {
+export function canAccessActorResources(
+  user: AuthUser,
+  actorAuth0Id: string,
+): boolean {
   // User is the actor themselves
   if (user.sub === actorAuth0Id) {
     return true;
@@ -256,29 +275,32 @@ export function requireActorAccess(user: AuthUser, actorAuth0Id: string) {
 export function extractRequestIP(event: APIGatewayProxyEvent): string {
   return (
     event.requestContext?.identity?.sourceIp ||
-    event.headers['X-Forwarded-For'] ||
-    event.headers['x-forwarded-for'] ||
-    'unknown'
+    event.headers["X-Forwarded-For"] ||
+    event.headers["x-forwarded-for"] ||
+    "unknown"
   );
 }
 
 export function extractUserAgent(event: APIGatewayProxyEvent): string {
-  return event.headers['User-Agent'] || event.headers['user-agent'] || 'unknown';
+  return (
+    event.headers["User-Agent"] || event.headers["user-agent"] || "unknown"
+  );
 }
 
 export function getOrCreateCorrelationId(event: APIGatewayProxyEvent): string {
   const existing =
-    event.headers['X-Correlation-ID'] ||
-    event.headers['x-correlation-id'] ||
-    event.headers['X-Request-ID'] ||
-    event.headers['x-request-id'];
+    event.headers["X-Correlation-ID"] ||
+    event.headers["x-correlation-id"] ||
+    event.headers["X-Request-ID"] ||
+    event.headers["x-request-id"];
 
-  if (typeof existing === 'string' && existing.trim().length > 0) {
+  if (typeof existing === "string" && existing.trim().length > 0) {
     return existing.trim();
   }
 
-  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-  if (typeof cryptoObj?.randomUUID === 'function') {
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
+    .crypto;
+  if (typeof cryptoObj?.randomUUID === "function") {
     return cryptoObj.randomUUID();
   }
 
@@ -287,11 +309,11 @@ export function getOrCreateCorrelationId(event: APIGatewayProxyEvent): string {
 
 export function withCorrelationHeaders(
   headers: Record<string, string>,
-  correlationId: string
+  correlationId: string,
 ): Record<string, string> {
   return {
     ...headers,
-    'X-Correlation-ID': correlationId,
+    "X-Correlation-ID": correlationId,
   };
 }
 
@@ -313,7 +335,7 @@ export function withCorrelationHeaders(
 export async function requireConsent(
   actorId: string,
   consentType: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<void> {
   try {
     // Build query string
@@ -324,13 +346,14 @@ export async function requireConsent(
     });
 
     // Call consent check API
-    const consentServiceUrl = process.env.CONSENT_SERVICE_URL || 'http://localhost:3001';
+    const consentServiceUrl =
+      process.env.CONSENT_SERVICE_URL || "http://localhost:3001";
     const url = `${consentServiceUrl}/consent/check?${queryParams.toString()}`;
 
     const response = await fetch(url, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
 
@@ -341,18 +364,20 @@ export async function requireConsent(
     };
 
     if (!response.ok) {
-      throw new Error(`Consent check failed: ${data.error || 'Unknown error'}`);
+      throw new Error(`Consent check failed: ${data.error || "Unknown error"}`);
     }
 
     // Check if consent is granted
     if (!data.isGranted) {
-      const reason = data.latestAction?.reason || 'Consent not granted';
+      const reason = data.latestAction?.reason || "Consent not granted";
       throw new Error(`Consent required: ${reason}`);
     }
 
-    console.log(`[CONSENT] Active consent verified for actor ${actorId}, type: ${consentType}`);
+    console.log(
+      `[CONSENT] Active consent verified for actor ${actorId}, type: ${consentType}`,
+    );
   } catch (error: any) {
-    console.error('[CONSENT] Enforcement failed:', error);
+    console.error("[CONSENT] Enforcement failed:", error);
     throw new Error(`Consent validation failed: ${error.message}`);
   }
 }
@@ -368,7 +393,7 @@ export async function requireConsent(
 export async function hasConsent(
   actorId: string,
   consentType: string,
-  projectId?: string
+  projectId?: string,
 ): Promise<boolean> {
   try {
     await requireConsent(actorId, consentType, projectId);

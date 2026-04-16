@@ -1,12 +1,12 @@
-import { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda';
-import { DatabaseClient, queries } from '@trulyimagined/database';
+import { APIGatewayProxyHandler, APIGatewayProxyEvent } from "aws-lambda";
+import { DatabaseClient, queries } from "@trulyimagined/database";
 import {
   validateAuth0TokenWithStatus,
   hasScope,
   getOrCreateCorrelationId,
   withCorrelationHeaders,
-} from '@trulyimagined/middleware';
-import { z } from 'zod';
+} from "@trulyimagined/middleware";
+import { z } from "zod";
 
 /**
  * Identity Service - Lambda Handler
@@ -22,10 +22,10 @@ import { z } from 'zod';
 const db = DatabaseClient.getInstance();
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-  'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
-  'Content-Type': 'application/json',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
+  "Content-Type": "application/json",
 };
 
 const NonEmptyString = z.string().trim().min(1);
@@ -43,10 +43,10 @@ const BooleanQuerySchema = z
   .string()
   .trim()
   .transform((value) => value.toLowerCase())
-  .refine((value) => value === 'true' || value === 'false', {
-    message: 'Expected boolean string',
+  .refine((value) => value === "true" || value === "false", {
+    message: "Expected boolean string",
   })
-  .transform((value) => value === 'true');
+  .transform((value) => value === "true");
 
 const IdentityLinkLookupQuerySchema = z.object({
   userProfileId: NonEmptyString,
@@ -56,7 +56,7 @@ const IdentityLinkLookupQuerySchema = z.object({
 
 const IdentityLinksListQuerySchema = z.object({
   userProfileId: NonEmptyString,
-  activeOnly: z.preprocess((value) => value ?? 'true', BooleanQuerySchema),
+  activeOnly: z.preprocess((value) => value ?? "true", BooleanQuerySchema),
 });
 
 const CreateIdentityLinkSchema = z.object({
@@ -94,7 +94,7 @@ const VerifyIdentityConfirmedSchema = z.object({
   ti_user_id: NonEmptyString,
   verification_session_id: NonEmptyString,
   verified_at: z.string().trim().optional(),
-  assurance_level: NonEmptyString.default('high'),
+  assurance_level: NonEmptyString.default("high"),
 });
 
 const RegisterActorSchema = z.object({
@@ -148,7 +148,7 @@ const CompleteVerificationSessionSchema = z
     completedByUserProfileId: NonEmptyString,
   })
   .refine((data) => data.sessionId || data.actorId, {
-    message: 'sessionId or actorId is required',
+    message: "sessionId or actorId is required",
   });
 
 const UpdateActorSchema = z
@@ -160,19 +160,24 @@ const UpdateActorSchema = z
     location: NonEmptyString.optional(),
     profileImageUrl: z.string().trim().url().optional(),
   })
-  .refine((value) => Object.values(value).some((field) => field !== undefined), {
-    message: 'At least one updatable field is required',
-  });
+  .refine(
+    (value) => Object.values(value).some((field) => field !== undefined),
+    {
+      message: "At least one updatable field is required",
+    },
+  );
 
 function validationErrorResponse(error: z.ZodError | string) {
   const details =
-    typeof error === 'string' ? { formErrors: [error], fieldErrors: {} } : error.flatten();
+    typeof error === "string"
+      ? { formErrors: [error], fieldErrors: {} }
+      : error.flatten();
 
   return {
     statusCode: 400,
     headers: corsHeaders,
     body: JSON.stringify({
-      error: 'Validation failed',
+      error: "Validation failed",
       details,
     }),
   };
@@ -181,14 +186,20 @@ function validationErrorResponse(error: z.ZodError | string) {
 function parseJsonBody<T>(event: APIGatewayProxyEvent, schema: z.ZodType<T>) {
   let rawBody: unknown;
   try {
-    rawBody = JSON.parse(event.body ?? '{}');
+    rawBody = JSON.parse(event.body ?? "{}");
   } catch {
-    return { success: false as const, response: validationErrorResponse('Invalid JSON body') };
+    return {
+      success: false as const,
+      response: validationErrorResponse("Invalid JSON body"),
+    };
   }
 
   const parsed = schema.safeParse(rawBody);
   if (!parsed.success) {
-    return { success: false as const, response: validationErrorResponse(parsed.error) };
+    return {
+      success: false as const,
+      response: validationErrorResponse(parsed.error),
+    };
   }
 
   return { success: true as const, data: parsed.data };
@@ -203,10 +214,13 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     body: string;
   }) => ({
     ...response,
-    headers: withCorrelationHeaders(response.headers ?? corsHeaders, correlationId),
+    headers: withCorrelationHeaders(
+      response.headers ?? corsHeaders,
+      correlationId,
+    ),
   });
 
-  console.log('[IDENTITY-SERVICE] Request received:', {
+  console.log("[IDENTITY-SERVICE] Request received:", {
     path: event.path,
     method: event.httpMethod,
     pathParameters: event.pathParameters,
@@ -217,8 +231,8 @@ export const handler: APIGatewayProxyHandler = async (event) => {
 
   try {
     // Handle CORS preflight
-    if (httpMethod === 'OPTIONS') {
-      return { statusCode: 200, headers: responseHeaders, body: '' };
+    if (httpMethod === "OPTIONS") {
+      return { statusCode: 200, headers: responseHeaders, body: "" };
     }
 
     const authResult = await validateAuth0TokenWithStatus(event);
@@ -227,7 +241,8 @@ export const handler: APIGatewayProxyHandler = async (event) => {
         statusCode: authResult.errorStatus || 401,
         headers: responseHeaders,
         body: JSON.stringify({
-          error: authResult.errorStatus === 403 ? 'Token rejected' : 'Unauthorized',
+          error:
+            authResult.errorStatus === 403 ? "Token rejected" : "Unauthorized",
         }),
       };
     }
@@ -235,109 +250,134 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     const user = authResult.user;
 
     // Scope-based authorization: require appropriate scope per HTTP method.
-    const requiredScope = httpMethod === 'GET' ? 'hdicr:identity:read' : 'hdicr:identity:write';
+    const requiredScope =
+      httpMethod === "GET" ? "hdicr:identity:read" : "hdicr:identity:write";
     if (!hasScope(user, requiredScope)) {
       return {
         statusCode: 403,
         headers: responseHeaders,
         body: JSON.stringify({
-          error: 'Forbidden',
+          error: "Forbidden",
           detail: `Missing required scope: ${requiredScope}`,
         }),
       };
     }
 
-    const tenantId = user.tenantId ?? process.env.HDICR_DEFAULT_TENANT_ID ?? 'trulyimagined';
+    const tenantId =
+      user.tenantId ?? process.env.HDICR_DEFAULT_TENANT_ID ?? "trulyimagined";
 
     // Route based on path and method
-    if (path === '/v1/identity/register' && httpMethod === 'POST') {
+    if (path === "/v1/identity/register" && httpMethod === "POST") {
       return withCorrelation(await registerActor(event, tenantId));
     }
 
-    if (path === '/v1/identity/admin/users' && httpMethod === 'GET') {
+    if (path === "/v1/identity/admin/users" && httpMethod === "GET") {
       return withCorrelation(await listAdminUsers(tenantId));
     }
 
-    if (path === '/v1/identity/link/by-provider' && httpMethod === 'GET') {
-      return withCorrelation(await getIdentityLinkByProviderAndProviderUser(event, tenantId));
+    if (path === "/v1/identity/link/by-provider" && httpMethod === "GET") {
+      return withCorrelation(
+        await getIdentityLinkByProviderAndProviderUser(event, tenantId),
+      );
     }
 
-    if (path === '/v1/identity/links' && httpMethod === 'GET') {
+    if (path === "/v1/identity/links" && httpMethod === "GET") {
       return withCorrelation(await listIdentityLinks(event, tenantId));
     }
 
-    if (path === '/v1/identity/link/create' && httpMethod === 'POST') {
+    if (path === "/v1/identity/link/create" && httpMethod === "POST") {
       return withCorrelation(await createIdentityLink(event, tenantId));
     }
 
-    if (path === '/v1/identity/link/reactivate' && httpMethod === 'POST') {
+    if (path === "/v1/identity/link/reactivate" && httpMethod === "POST") {
       return withCorrelation(await reactivateIdentityLink(event, tenantId));
     }
 
-    if (path === '/v1/identity/link/unlink-by-id' && httpMethod === 'POST') {
+    if (path === "/v1/identity/link/unlink-by-id" && httpMethod === "POST") {
       return withCorrelation(await unlinkIdentityById(event, tenantId));
     }
 
-    if (path === '/v1/identity/link/unlink-by-provider' && httpMethod === 'POST') {
+    if (
+      path === "/v1/identity/link/unlink-by-provider" &&
+      httpMethod === "POST"
+    ) {
       return withCorrelation(await unlinkIdentityByProvider(event, tenantId));
     }
 
-    if (path === '/v1/identity/link/upsert' && httpMethod === 'POST') {
+    if (path === "/v1/identity/link/upsert" && httpMethod === "POST") {
       return withCorrelation(await upsertIdentityLink(event, tenantId));
     }
 
-    if (path === '/identity/verify-confirmed' && httpMethod === 'POST') {
+    if (path === "/identity/verify-confirmed" && httpMethod === "POST") {
       return withCorrelation(await verifyIdentityConfirmed(event, tenantId));
     }
 
-    if (path === '/v1/identity/verification-sessions' && httpMethod === 'GET') {
+    if (path === "/v1/identity/verification-sessions" && httpMethod === "GET") {
       return withCorrelation(await getOpenVerificationSession(event, tenantId));
     }
 
-    if (path === '/v1/identity/verification-sessions' && httpMethod === 'POST') {
+    if (
+      path === "/v1/identity/verification-sessions" &&
+      httpMethod === "POST"
+    ) {
       return withCorrelation(await createVerificationSession(event, tenantId));
     }
 
-    if (path === '/v1/identity/verification-sessions/schedule' && httpMethod === 'POST') {
-      return withCorrelation(await scheduleVerificationSession(event, tenantId));
+    if (
+      path === "/v1/identity/verification-sessions/schedule" &&
+      httpMethod === "POST"
+    ) {
+      return withCorrelation(
+        await scheduleVerificationSession(event, tenantId),
+      );
     }
 
-    if (path === '/v1/identity/verification-sessions/batch-latest' && httpMethod === 'POST') {
-      return withCorrelation(await batchGetLatestVerificationSessions(event, tenantId));
+    if (
+      path === "/v1/identity/verification-sessions/batch-latest" &&
+      httpMethod === "POST"
+    ) {
+      return withCorrelation(
+        await batchGetLatestVerificationSessions(event, tenantId),
+      );
     }
 
-    if (path === '/v1/identity/verification-sessions/complete' && httpMethod === 'POST') {
-      return withCorrelation(await completeVerificationSession(event, tenantId));
+    if (
+      path === "/v1/identity/verification-sessions/complete" &&
+      httpMethod === "POST"
+    ) {
+      return withCorrelation(
+        await completeVerificationSession(event, tenantId),
+      );
     }
 
-    if (path.endsWith('/verify') && httpMethod === 'POST') {
+    if (path.endsWith("/verify") && httpMethod === "POST") {
       return withCorrelation(await setActorVerificationStatus(event, tenantId));
     }
 
-    if (path.startsWith('/v1/identity/') && httpMethod === 'GET') {
+    if (path.startsWith("/v1/identity/") && httpMethod === "GET") {
       return withCorrelation(await getActorById(event, tenantId));
     }
 
-    if (path === '/v1/identity' && httpMethod === 'GET') {
+    if (path === "/v1/identity" && httpMethod === "GET") {
       return withCorrelation(await listActors(event, tenantId));
     }
 
-    if (path.startsWith('/v1/identity/') && httpMethod === 'PUT') {
+    if (path.startsWith("/v1/identity/") && httpMethod === "PUT") {
       return withCorrelation(await updateActor(event, tenantId));
     }
 
     return {
       statusCode: 404,
       headers: responseHeaders,
-      body: JSON.stringify({ error: 'Not found' }),
+      body: JSON.stringify({ error: "Not found" }),
     };
   } catch (error: any) {
-    console.error('[IDENTITY-SERVICE] Error:', { error, correlationId });
+    console.error("[IDENTITY-SERVICE] Error:", { error, correlationId });
     return {
       statusCode: 500,
       headers: responseHeaders,
       body: JSON.stringify({
-        error: 'Internal server error',
+        error: "Internal server error",
         message: error.message,
       }),
     };
@@ -354,7 +394,15 @@ async function registerActor(event: APIGatewayProxyEvent, tenantId: string) {
       return parsedBody.response;
     }
 
-    const { auth0UserId, email, firstName, lastName, stageName, bio, location } = parsedBody.data;
+    const {
+      auth0UserId,
+      email,
+      firstName,
+      lastName,
+      stageName,
+      bio,
+      location,
+    } = parsedBody.data;
 
     // Create actor
     const result = await db.queryWithTenant(tenantId, queries.actors.create, [
@@ -370,7 +418,7 @@ async function registerActor(event: APIGatewayProxyEvent, tenantId: string) {
 
     const actor = result.rows[0];
 
-    console.log('[IDENTITY-SERVICE] Actor registered:', actor.id);
+    console.log("[IDENTITY-SERVICE] Actor registered:", actor.id);
 
     return {
       statusCode: 201,
@@ -385,23 +433,24 @@ async function registerActor(event: APIGatewayProxyEvent, tenantId: string) {
           lastName: actor.last_name,
           stageName: actor.stage_name,
           displayName:
-            actor.stage_name || `${actor.first_name || ''} ${actor.last_name || ''}`.trim(),
+            actor.stage_name ||
+            `${actor.first_name || ""} ${actor.last_name || ""}`.trim(),
           verificationStatus: actor.verification_status,
           createdAt: actor.created_at,
         },
       }),
     };
   } catch (error: any) {
-    console.error('[IDENTITY-SERVICE] Registration error:', error);
+    console.error("[IDENTITY-SERVICE] Registration error:", error);
 
     // Handle unique constraint violations
-    if (error.code === '23505') {
+    if (error.code === "23505") {
       return {
         statusCode: 409,
         headers: corsHeaders,
         body: JSON.stringify({
-          error: 'Actor already registered',
-          message: 'An actor with this email or Auth0 ID already exists',
+          error: "Actor already registered",
+          message: "An actor with this email or Auth0 ID already exists",
         }),
       };
     }
@@ -421,13 +470,16 @@ async function getActorById(event: APIGatewayProxyEvent, tenantId: string) {
 
   const { id: actorId } = parsedPath.data;
 
-  const result = await db.queryWithTenant(tenantId, queries.actors.getById, [actorId, tenantId]);
+  const result = await db.queryWithTenant(tenantId, queries.actors.getById, [
+    actorId,
+    tenantId,
+  ]);
 
   if (result.rows.length === 0) {
     return {
       statusCode: 404,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Actor not found' }),
+      body: JSON.stringify({ error: "Actor not found" }),
     };
   }
 
@@ -445,7 +497,8 @@ async function getActorById(event: APIGatewayProxyEvent, tenantId: string) {
         lastName: actor.last_name,
         stageName: actor.stage_name,
         displayName:
-          actor.stage_name || `${actor.first_name || ''} ${actor.last_name || ''}`.trim(),
+          actor.stage_name ||
+          `${actor.first_name || ""} ${actor.last_name || ""}`.trim(),
         bio: actor.bio,
         location: actor.location,
         profileImageUrl: actor.profile_image_url,
@@ -462,14 +515,20 @@ async function getActorById(event: APIGatewayProxyEvent, tenantId: string) {
  * List all actors (with pagination)
  */
 async function listActors(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsedQuery = PaginationQuerySchema.safeParse(event.queryStringParameters ?? {});
+  const parsedQuery = PaginationQuerySchema.safeParse(
+    event.queryStringParameters ?? {},
+  );
   if (!parsedQuery.success) {
     return validationErrorResponse(parsedQuery.error);
   }
 
   const { limit, offset } = parsedQuery.data;
 
-  const result = await db.queryWithTenant(tenantId, queries.actors.list, [tenantId, limit, offset]);
+  const result = await db.queryWithTenant(tenantId, queries.actors.list, [
+    tenantId,
+    limit,
+    offset,
+  ]);
 
   return {
     statusCode: 200,
@@ -483,7 +542,8 @@ async function listActors(event: APIGatewayProxyEvent, tenantId: string) {
         lastName: actor.last_name,
         stageName: actor.stage_name,
         displayName:
-          actor.stage_name || `${actor.first_name || ''} ${actor.last_name || ''}`.trim(),
+          actor.stage_name ||
+          `${actor.first_name || ""} ${actor.last_name || ""}`.trim(),
         verificationStatus: actor.verification_status,
         isFoundingMember: actor.is_founding_member,
         registryId: actor.registry_id,
@@ -499,9 +559,11 @@ async function listActors(event: APIGatewayProxyEvent, tenantId: string) {
 }
 
 async function listAdminUsers(tenantId: string) {
-  const result = await db.queryWithTenant(tenantId, queries.userProfiles.listAdminUsersWithActors, [
+  const result = await db.queryWithTenant(
     tenantId,
-  ]);
+    queries.userProfiles.listAdminUsersWithActors,
+    [tenantId],
+  );
 
   return {
     statusCode: 200,
@@ -529,7 +591,8 @@ async function updateActor(event: APIGatewayProxyEvent, tenantId: string) {
 
   const { id: actorId } = parsedPath.data;
 
-  const { firstName, lastName, stageName, bio, location, profileImageUrl } = parsedBody.data;
+  const { firstName, lastName, stageName, bio, location, profileImageUrl } =
+    parsedBody.data;
 
   const result = await db.queryWithTenant(tenantId, queries.actors.update, [
     actorId,
@@ -546,7 +609,7 @@ async function updateActor(event: APIGatewayProxyEvent, tenantId: string) {
     return {
       statusCode: 404,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Actor not found' }),
+      body: JSON.stringify({ error: "Actor not found" }),
     };
   }
 
@@ -565,7 +628,8 @@ async function updateActor(event: APIGatewayProxyEvent, tenantId: string) {
         lastName: actor.last_name,
         stageName: actor.stage_name,
         displayName:
-          actor.stage_name || `${actor.first_name || ''} ${actor.last_name || ''}`.trim(),
+          actor.stage_name ||
+          `${actor.first_name || ""} ${actor.last_name || ""}`.trim(),
         bio: actor.bio,
         location: actor.location,
         profileImageUrl: actor.profile_image_url,
@@ -577,9 +641,11 @@ async function updateActor(event: APIGatewayProxyEvent, tenantId: string) {
 
 async function getIdentityLinkByProviderAndProviderUser(
   event: APIGatewayProxyEvent,
-  tenantId: string
+  tenantId: string,
 ) {
-  const parsedQuery = IdentityLinkLookupQuerySchema.safeParse(event.queryStringParameters ?? {});
+  const parsedQuery = IdentityLinkLookupQuerySchema.safeParse(
+    event.queryStringParameters ?? {},
+  );
   if (!parsedQuery.success) {
     return validationErrorResponse(parsedQuery.error);
   }
@@ -595,7 +661,7 @@ async function getIdentityLinkByProviderAndProviderUser(
        AND provider_user_id = $3
      ORDER BY created_at DESC
      LIMIT 1`,
-    [userProfileId, provider, providerUserId]
+    [userProfileId, provider, providerUserId],
   );
 
   return {
@@ -607,8 +673,13 @@ async function getIdentityLinkByProviderAndProviderUser(
   };
 }
 
-async function listIdentityLinks(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsedQuery = IdentityLinksListQuerySchema.safeParse(event.queryStringParameters ?? {});
+async function listIdentityLinks(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const parsedQuery = IdentityLinksListQuerySchema.safeParse(
+    event.queryStringParameters ?? {},
+  );
   if (!parsedQuery.success) {
     return validationErrorResponse(parsedQuery.error);
   }
@@ -622,7 +693,7 @@ async function listIdentityLinks(event: APIGatewayProxyEvent, tenantId: string) 
      WHERE user_profile_id = $1
        AND ($2::boolean = FALSE OR is_active = TRUE)
      ORDER BY created_at DESC`,
-    [userProfileId, activeOnly]
+    [userProfileId, activeOnly],
   );
 
   return {
@@ -634,7 +705,10 @@ async function listIdentityLinks(event: APIGatewayProxyEvent, tenantId: string) 
   };
 }
 
-async function createIdentityLink(event: APIGatewayProxyEvent, tenantId: string) {
+async function createIdentityLink(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, CreateIdentityLinkSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
@@ -673,12 +747,12 @@ async function createIdentityLink(event: APIGatewayProxyEvent, tenantId: string)
       provider,
       providerUserId,
       providerType,
-      verificationLevel || 'low',
-      assuranceLevel || 'low',
+      verificationLevel || "low",
+      assuranceLevel || "low",
       JSON.stringify(credentialData ?? {}),
       JSON.stringify(metadata ?? {}),
       expiresAt || null,
-    ]
+    ],
   );
 
   return {
@@ -691,14 +765,23 @@ async function createIdentityLink(event: APIGatewayProxyEvent, tenantId: string)
   };
 }
 
-async function reactivateIdentityLink(event: APIGatewayProxyEvent, tenantId: string) {
+async function reactivateIdentityLink(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, ReactivateIdentityLinkSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
   }
 
-  const { linkId, verificationLevel, assuranceLevel, credentialData, metadata, expiresAt } =
-    parsedBody.data;
+  const {
+    linkId,
+    verificationLevel,
+    assuranceLevel,
+    credentialData,
+    metadata,
+    expiresAt,
+  } = parsedBody.data;
 
   const result = await db.queryWithTenant(
     tenantId,
@@ -721,14 +804,14 @@ async function reactivateIdentityLink(event: APIGatewayProxyEvent, tenantId: str
       credentialData !== undefined ? JSON.stringify(credentialData) : null,
       metadata !== undefined ? JSON.stringify(metadata) : null,
       expiresAt || null,
-    ]
+    ],
   );
 
   if (result.rows.length === 0) {
     return {
       statusCode: 404,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Identity link not found' }),
+      body: JSON.stringify({ error: "Identity link not found" }),
     };
   }
 
@@ -742,7 +825,10 @@ async function reactivateIdentityLink(event: APIGatewayProxyEvent, tenantId: str
   };
 }
 
-async function unlinkIdentityById(event: APIGatewayProxyEvent, tenantId: string) {
+async function unlinkIdentityById(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, UnlinkIdentityByIdSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
@@ -757,7 +843,7 @@ async function unlinkIdentityById(event: APIGatewayProxyEvent, tenantId: string)
          updated_at = NOW()
      WHERE id = $1 AND user_profile_id = $2
      RETURNING id, user_profile_id, provider, provider_user_id, is_active, updated_at`,
-    [linkId, userProfileId]
+    [linkId, userProfileId],
   );
 
   return {
@@ -767,7 +853,10 @@ async function unlinkIdentityById(event: APIGatewayProxyEvent, tenantId: string)
   };
 }
 
-async function unlinkIdentityByProvider(event: APIGatewayProxyEvent, tenantId: string) {
+async function unlinkIdentityByProvider(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, UnlinkIdentityByProviderSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
@@ -782,7 +871,7 @@ async function unlinkIdentityByProvider(event: APIGatewayProxyEvent, tenantId: s
          updated_at = NOW()
      WHERE provider = $1 AND user_profile_id = $2
      RETURNING id, user_profile_id, provider, provider_user_id, is_active, updated_at`,
-    [provider, userProfileId]
+    [provider, userProfileId],
   );
 
   return {
@@ -797,7 +886,10 @@ async function unlinkIdentityByProvider(event: APIGatewayProxyEvent, tenantId: s
  * Used by admin verification workflows where the same provider/user may be re-verified.
  * Route: POST /v1/identity/link/upsert
  */
-async function upsertIdentityLink(event: APIGatewayProxyEvent, tenantId: string) {
+async function upsertIdentityLink(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, CreateIdentityLinkSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
@@ -846,12 +938,12 @@ async function upsertIdentityLink(event: APIGatewayProxyEvent, tenantId: string)
       provider,
       providerUserId,
       providerType,
-      verificationLevel || 'low',
-      assuranceLevel || 'low',
+      verificationLevel || "low",
+      assuranceLevel || "low",
       JSON.stringify(credentialData ?? {}),
       JSON.stringify(metadata ?? {}),
       expiresAt || null,
-    ]
+    ],
   );
 
   return {
@@ -868,13 +960,17 @@ async function upsertIdentityLink(event: APIGatewayProxyEvent, tenantId: string)
  * Sync verified Stripe Identity outcome from TI webhook processing.
  * Route: POST /identity/verify-confirmed
  */
-async function verifyIdentityConfirmed(event: APIGatewayProxyEvent, tenantId: string) {
+async function verifyIdentityConfirmed(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, VerifyIdentityConfirmedSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
   }
 
-  const { ti_user_id, verification_session_id, verified_at, assurance_level } = parsedBody.data;
+  const { ti_user_id, verification_session_id, verified_at, assurance_level } =
+    parsedBody.data;
 
   const profileResult = await db.queryWithTenant(
     tenantId,
@@ -884,7 +980,7 @@ async function verifyIdentityConfirmed(event: APIGatewayProxyEvent, tenantId: st
        AND deleted_at IS NULL
        AND (id::text = $1 OR auth0_user_id = $1)
      LIMIT 1`,
-    [ti_user_id, tenantId]
+    [ti_user_id, tenantId],
   );
 
   if (profileResult.rows.length === 0) {
@@ -892,7 +988,7 @@ async function verifyIdentityConfirmed(event: APIGatewayProxyEvent, tenantId: st
       statusCode: 404,
       headers: corsHeaders,
       body: JSON.stringify({
-        error: 'User profile not found',
+        error: "User profile not found",
         ti_user_id,
       }),
     };
@@ -931,12 +1027,12 @@ async function verifyIdentityConfirmed(event: APIGatewayProxyEvent, tenantId: st
       verification_session_id,
       assurance_level,
       JSON.stringify({
-        source: 'ti-webhook',
+        source: "ti-webhook",
         ti_user_id,
         verification_session_id,
         verified_at: verifiedAt,
       }),
-    ]
+    ],
   );
 
   const actorUpdateResult = await db.queryWithTenant(
@@ -949,7 +1045,7 @@ async function verifyIdentityConfirmed(event: APIGatewayProxyEvent, tenantId: st
        AND deleted_at IS NULL
        AND (user_profile_id = $1::uuid OR auth0_user_id = $2)
      RETURNING id, verification_status, verified_at`,
-    [userProfileId, auth0UserId, tenantId]
+    [userProfileId, auth0UserId, tenantId],
   );
 
   return {
@@ -971,17 +1067,20 @@ async function verifyIdentityConfirmed(event: APIGatewayProxyEvent, tenantId: st
  * Set actor verification status (called by admin after manual verification review).
  * Route: POST /v1/identity/{id}/verify
  */
-async function setActorVerificationStatus(event: APIGatewayProxyEvent, tenantId: string) {
+async function setActorVerificationStatus(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const rawPath = event.path;
   // Extract actorId from /v1/identity/{id}/verify — segments: ['v1','identity','{id}','verify']
-  const segments = rawPath.split('/').filter(Boolean);
+  const segments = rawPath.split("/").filter(Boolean);
   const actorId = segments[2];
 
-  if (!actorId || actorId === 'verify') {
+  if (!actorId || actorId === "verify") {
     return {
       statusCode: 400,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'actorId is required in path' }),
+      body: JSON.stringify({ error: "actorId is required in path" }),
     };
   }
 
@@ -1003,14 +1102,20 @@ async function setActorVerificationStatus(event: APIGatewayProxyEvent, tenantId:
        AND tenant_id = $5
        AND deleted_at IS NULL
      RETURNING id, verification_status, verified_at`,
-    [actorId, verified ? 'verified' : 'rejected', verified, verifiedByUserProfileId, tenantId]
+    [
+      actorId,
+      verified ? "verified" : "rejected",
+      verified,
+      verifiedByUserProfileId,
+      tenantId,
+    ],
   );
 
   if (result.rows.length === 0) {
     return {
       statusCode: 404,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Actor not found' }),
+      body: JSON.stringify({ error: "Actor not found" }),
     };
   }
 
@@ -1028,16 +1133,24 @@ async function setActorVerificationStatus(event: APIGatewayProxyEvent, tenantId:
 
 // ==================== MANUAL VERIFICATION SESSION HANDLERS ====================
 
-async function getOpenVerificationSession(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsed = VerificationSessionsQuerySchema.safeParse(event.queryStringParameters ?? {});
+async function getOpenVerificationSession(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const parsed = VerificationSessionsQuerySchema.safeParse(
+    event.queryStringParameters ?? {},
+  );
   if (!parsed.success) return validationErrorResponse(parsed.error);
 
   const { actorId, statusFilter } = parsed.data;
   const statuses = statusFilter
-    ? statusFilter.split(',').map((s) => s.trim()).filter(Boolean)
-    : ['pending_scheduling', 'scheduled'];
+    ? statusFilter
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : ["pending_scheduling", "scheduled"];
 
-  const placeholders = statuses.map((_, i) => `$${i + 3}`).join(', ');
+  const placeholders = statuses.map((_, i) => `$${i + 3}`).join(", ");
 
   const result = await db.queryWithTenant(
     tenantId,
@@ -1049,7 +1162,7 @@ async function getOpenVerificationSession(event: APIGatewayProxyEvent, tenantId:
        AND status IN (${placeholders})
      ORDER BY created_at DESC
      LIMIT 1`,
-    [actorId, tenantId, ...statuses]
+    [actorId, tenantId, ...statuses],
   );
 
   return {
@@ -1059,11 +1172,15 @@ async function getOpenVerificationSession(event: APIGatewayProxyEvent, tenantId:
   };
 }
 
-async function createVerificationSession(event: APIGatewayProxyEvent, tenantId: string) {
+async function createVerificationSession(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, CreateVerificationSessionSchema);
   if (!parsedBody.success) return parsedBody.response;
 
-  const { actorId, requestedByUserProfileId, preferredTimezone, phoneNumber } = parsedBody.data;
+  const { actorId, requestedByUserProfileId, preferredTimezone, phoneNumber } =
+    parsedBody.data;
 
   const result = await db.queryWithTenant(
     tenantId,
@@ -1071,7 +1188,13 @@ async function createVerificationSession(event: APIGatewayProxyEvent, tenantId: 
        actor_id, requested_by_user_profile_id, status, preferred_timezone, phone_number, tenant_id
      ) VALUES ($1::uuid, $2::uuid, 'pending_scheduling', $3, $4, $5)
      RETURNING id, status, created_at`,
-    [actorId, requestedByUserProfileId, preferredTimezone, phoneNumber, tenantId]
+    [
+      actorId,
+      requestedByUserProfileId,
+      preferredTimezone,
+      phoneNumber,
+      tenantId,
+    ],
   );
 
   return {
@@ -1088,7 +1211,10 @@ async function createVerificationSession(event: APIGatewayProxyEvent, tenantId: 
   };
 }
 
-async function scheduleVerificationSession(event: APIGatewayProxyEvent, tenantId: string) {
+async function scheduleVerificationSession(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, ScheduleVerificationSessionSchema);
   if (!parsedBody.success) return parsedBody.response;
 
@@ -1122,12 +1248,12 @@ async function scheduleVerificationSession(event: APIGatewayProxyEvent, tenantId
         sessionId,
         scheduledAt,
         meetingLinkEncrypted,
-        meetingPlatform || 'external',
+        meetingPlatform || "external",
         preferredTimezone || null,
         phoneNumber || null,
         requestedByUserProfileId,
         tenantId,
-      ]
+      ],
     );
     verificationRequestId = sessionId;
   } else {
@@ -1137,7 +1263,7 @@ async function scheduleVerificationSession(event: APIGatewayProxyEvent, tenantId
        WHERE actor_id = $1::uuid AND tenant_id = $2 AND deleted_at IS NULL
          AND status IN ('pending_scheduling', 'scheduled')
        ORDER BY created_at DESC LIMIT 1`,
-      [actorId, tenantId]
+      [actorId, tenantId],
     );
 
     if (openResult.rows.length > 0) {
@@ -1158,12 +1284,12 @@ async function scheduleVerificationSession(event: APIGatewayProxyEvent, tenantId
           verificationRequestId,
           scheduledAt,
           meetingLinkEncrypted,
-          meetingPlatform || 'external',
+          meetingPlatform || "external",
           preferredTimezone || null,
           phoneNumber || null,
           requestedByUserProfileId,
           tenantId,
-        ]
+        ],
       );
     } else {
       const insertResult = await db.queryWithTenant(
@@ -1177,12 +1303,12 @@ async function scheduleVerificationSession(event: APIGatewayProxyEvent, tenantId
           actorId,
           preferredTimezone || null,
           phoneNumber || null,
-          meetingPlatform || 'external',
+          meetingPlatform || "external",
           meetingLinkEncrypted,
           scheduledAt,
           requestedByUserProfileId,
           tenantId,
-        ]
+        ],
       );
       verificationRequestId = insertResult.rows[0].id;
     }
@@ -1191,16 +1317,23 @@ async function scheduleVerificationSession(event: APIGatewayProxyEvent, tenantId
   return {
     statusCode: 200,
     headers: corsHeaders,
-    body: JSON.stringify({ success: true, verificationRequestId, status: 'scheduled' }),
+    body: JSON.stringify({
+      success: true,
+      verificationRequestId,
+      status: "scheduled",
+    }),
   };
 }
 
-async function batchGetLatestVerificationSessions(event: APIGatewayProxyEvent, tenantId: string) {
+async function batchGetLatestVerificationSessions(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, BatchLatestSessionsSchema);
   if (!parsedBody.success) return parsedBody.response;
 
   const { actorIds } = parsedBody.data;
-  const placeholders = actorIds.map((_, i) => `$${i + 2}::uuid`).join(', ');
+  const placeholders = actorIds.map((_, i) => `$${i + 2}::uuid`).join(", ");
 
   const result = await db.queryWithTenant(
     tenantId,
@@ -1212,7 +1345,7 @@ async function batchGetLatestVerificationSessions(event: APIGatewayProxyEvent, t
        AND actor_id IN (${placeholders})
        AND deleted_at IS NULL
      ORDER BY actor_id, created_at DESC`,
-    [tenantId, ...actorIds]
+    [tenantId, ...actorIds],
   );
 
   const sessions: Record<string, object | null> = {};
@@ -1238,32 +1371,36 @@ async function batchGetLatestVerificationSessions(event: APIGatewayProxyEvent, t
   };
 }
 
-async function completeVerificationSession(event: APIGatewayProxyEvent, tenantId: string) {
+async function completeVerificationSession(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
   const parsedBody = parseJsonBody(event, CompleteVerificationSessionSchema);
   if (!parsedBody.success) return parsedBody.response;
 
-  const { sessionId, actorId, verified, notes, completedByUserProfileId } = parsedBody.data;
+  const { sessionId, actorId, verified, notes, completedByUserProfileId } =
+    parsedBody.data;
 
   const findResult = sessionId
     ? await db.queryWithTenant(
         tenantId,
         `SELECT id, actor_id FROM manual_verification_sessions
          WHERE id = $1::uuid AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1`,
-        [sessionId, tenantId]
+        [sessionId, tenantId],
       )
     : await db.queryWithTenant(
         tenantId,
         `SELECT id, actor_id FROM manual_verification_sessions
          WHERE actor_id = $1::uuid AND tenant_id = $2 AND deleted_at IS NULL
          ORDER BY created_at DESC LIMIT 1`,
-        [actorId, tenantId]
+        [actorId, tenantId],
       );
 
   if (findResult.rows.length === 0) {
     return {
       statusCode: 404,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Verification session not found' }),
+      body: JSON.stringify({ error: "Verification session not found" }),
     };
   }
 
@@ -1279,7 +1416,14 @@ async function completeVerificationSession(event: APIGatewayProxyEvent, tenantId
          completed_by_user_profile_id = $5::uuid,
          updated_at = NOW()
      WHERE id = $1::uuid AND tenant_id = $6`,
-    [session.id, verified ? 'completed' : 'failed', verified, notes || null, completedByUserProfileId, tenantId]
+    [
+      session.id,
+      verified ? "completed" : "failed",
+      verified,
+      notes || null,
+      completedByUserProfileId,
+      tenantId,
+    ],
   );
 
   return {
