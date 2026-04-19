@@ -65,7 +65,6 @@ function evaluateRequestedUsage(
   }
 
   const mediaUsage = (policy.mediaUsage as Record<string, unknown> | undefined) || {};
-  const legacyUsage = (policy.usage as Record<string, unknown> | undefined) || {};
 
   const keyMap: Record<string, string[]> = {
     film_tv: ['television', 'film_tv'],
@@ -75,9 +74,7 @@ function evaluateRequestedUsage(
 
   const keys = keyMap[requestedUsage] || [];
   const mediaPermission = keys.map((key) => mediaUsage[key]).find((value) => value !== undefined);
-  const legacyPermission = keys.map((key) => legacyUsage[key]).find((value) => value !== undefined);
-
-  const permission = mediaPermission ?? legacyPermission;
+  const permission = mediaPermission;
 
   if (typeof permission === 'boolean') {
     return permission
