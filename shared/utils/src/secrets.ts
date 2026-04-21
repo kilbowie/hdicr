@@ -14,22 +14,18 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
   GetSecretValueCommandInput,
-} from '@aws-sdk/client-secrets-manager';
+} from "@aws-sdk/client-secrets-manager";
 
 // Type-safe secret names
 export type SecretName =
-  | 'prod/encryption-key'
-  | 'prod/vc-issuer-key'
-  | 'prod/consent-key'
-  | 'prod/auth0-client-secret'
-  | 'prod/stripe-secret-key'
-  | 'prod/stripe-webhook-secret'
-  | 'staging/encryption-key'
-  | 'staging/vc-issuer-key'
-  | 'staging/consent-key'
-  | 'staging/auth0-client-secret'
-  | 'staging/stripe-secret-key'
-  | 'staging/stripe-webhook-secret';
+  | "prod/encryption-key"
+  | "prod/vc-issuer-key"
+  | "prod/consent-key"
+  | "prod/auth0-client-secret"
+  | "staging/encryption-key"
+  | "staging/vc-issuer-key"
+  | "staging/consent-key"
+  | "staging/auth0-client-secret";
 
 // Environment variable fallback mapping
 // Maps Secrets Manager path → local .env.local variable name
@@ -37,18 +33,14 @@ export type SecretName =
 // consent-proof.ts reads CONSENT_SIGNING_PRIVATE_KEY directly.
 // These must match the actual env var names used in the consuming code.
 const ENV_FALLBACK_MAP: Record<SecretName, string> = {
-  'prod/encryption-key': 'ENCRYPTION_KEY',
-  'prod/vc-issuer-key': 'ISSUER_ED25519_PRIVATE_KEY',
-  'prod/consent-key': 'CONSENT_SIGNING_PRIVATE_KEY',
-  'prod/auth0-client-secret': 'AUTH0_CLIENT_SECRET',
-  'prod/stripe-secret-key': 'STRIPE_SECRET_KEY',
-  'prod/stripe-webhook-secret': 'STRIPE_WEBHOOK_SECRET',
-  'staging/encryption-key': 'ENCRYPTION_KEY',
-  'staging/vc-issuer-key': 'ISSUER_ED25519_PRIVATE_KEY',
-  'staging/consent-key': 'CONSENT_SIGNING_PRIVATE_KEY',
-  'staging/auth0-client-secret': 'AUTH0_CLIENT_SECRET',
-  'staging/stripe-secret-key': 'STRIPE_SECRET_KEY',
-  'staging/stripe-webhook-secret': 'STRIPE_WEBHOOK_SECRET',
+  "prod/encryption-key": "ENCRYPTION_KEY",
+  "prod/vc-issuer-key": "ISSUER_ED25519_PRIVATE_KEY",
+  "prod/consent-key": "CONSENT_SIGNING_PRIVATE_KEY",
+  "prod/auth0-client-secret": "AUTH0_CLIENT_SECRET",
+  "staging/encryption-key": "ENCRYPTION_KEY",
+  "staging/vc-issuer-key": "ISSUER_ED25519_PRIVATE_KEY",
+  "staging/consent-key": "CONSENT_SIGNING_PRIVATE_KEY",
+  "staging/auth0-client-secret": "AUTH0_CLIENT_SECRET",
 };
 
 // Cache configuration
@@ -66,10 +58,10 @@ let client: SecretsManagerClient | null = null;
 function getClient(): SecretsManagerClient {
   if (!client) {
     client = new SecretsManagerClient({
-      region: process.env.AWS_REGION || 'eu-west-2',
+      region: process.env.AWS_REGION || "eu-west-2",
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
       },
     });
   }
@@ -103,14 +95,17 @@ function getClient(): SecretsManagerClient {
  */
 export async function getSecret(secretName: SecretName): Promise<string> {
   // Development mode: Use environment variables
-  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.NODE_ENV === "test"
+  ) {
     const envVar = ENV_FALLBACK_MAP[secretName];
     const value = process.env[envVar];
 
     if (!value) {
       throw new Error(
         `Development secret not found: ${envVar} (for ${secretName})\n` +
-          `Add ${envVar}=... to your .env.local file`
+          `Add ${envVar}=... to your .env.local file`,
       );
     }
 
@@ -141,7 +136,7 @@ export async function getSecret(secretName: SecretName): Promise<string> {
 
     if (fallbackValue) {
       console.warn(
-        `[SECRETS] AWS Secrets Manager failed, using emergency env var fallback: ${envVar}`
+        `[SECRETS] AWS Secrets Manager failed, using emergency env var fallback: ${envVar}`,
       );
       return fallbackValue;
     }
@@ -159,7 +154,10 @@ export async function getSecret(secretName: SecretName): Promise<string> {
  * @returns The secret value
  * @throws Error if all retries fail
  */
-async function getSecretFromAWS(secretName: SecretName, maxRetries = 3): Promise<string> {
+async function getSecretFromAWS(
+  secretName: SecretName,
+  maxRetries = 3,
+): Promise<string> {
   const smClient = getClient();
 
   let lastError: Error | null = null;
@@ -168,14 +166,16 @@ async function getSecretFromAWS(secretName: SecretName, maxRetries = 3): Promise
     try {
       const input: GetSecretValueCommandInput = {
         SecretId: secretName,
-        VersionStage: 'AWSCURRENT', // Always use latest version
+        VersionStage: "AWSCURRENT", // Always use latest version
       };
 
       const command = new GetSecretValueCommand(input);
       const response = await smClient.send(command);
 
       if (!response.SecretString) {
-        throw new Error(`Secret ${secretName} has no SecretString (is it a binary secret?)`);
+        throw new Error(
+          `Secret ${secretName} has no SecretString (is it a binary secret?)`,
+        );
       }
 
       return response.SecretString;
@@ -183,18 +183,21 @@ async function getSecretFromAWS(secretName: SecretName, maxRetries = 3): Promise
       lastError = error as Error;
 
       // Don't retry on ResourceNotFoundException (secret doesn't exist)
-      if (error instanceof Error && error.name === 'ResourceNotFoundException') {
+      if (
+        error instanceof Error &&
+        error.name === "ResourceNotFoundException"
+      ) {
         throw new Error(
           `Secret not found: ${secretName}\n` +
-            `Run migration script: node scripts/migrate-secrets-to-aws.js`
+            `Run migration script: node scripts/migrate-secrets-to-aws.js`,
         );
       }
 
       // Don't retry on AccessDeniedException (permission issue)
-      if (error instanceof Error && error.name === 'AccessDeniedException') {
+      if (error instanceof Error && error.name === "AccessDeniedException") {
         throw new Error(
           `Access denied to secret: ${secretName}\n` +
-            `Check IAM permissions for GetSecretValue on ${secretName}`
+            `Check IAM permissions for GetSecretValue on ${secretName}`,
         );
       }
 
@@ -204,7 +207,7 @@ async function getSecretFromAWS(secretName: SecretName, maxRetries = 3): Promise
         console.warn(
           `[SECRETS] Attempt ${attempt}/${maxRetries} failed for ${secretName}, ` +
             `retrying in ${backoffMs}ms...`,
-          error
+          error,
         );
         await sleep(backoffMs);
       }
@@ -212,7 +215,7 @@ async function getSecretFromAWS(secretName: SecretName, maxRetries = 3): Promise
   }
 
   throw new Error(
-    `Failed to retrieve secret ${secretName} after ${maxRetries} attempts:\n${lastError?.message}`
+    `Failed to retrieve secret ${secretName} after ${maxRetries} attempts:\n${lastError?.message}`,
   );
 }
 
@@ -284,7 +287,9 @@ export function getSecretCacheStats() {
  * ]);
  * ```
  */
-export async function validateSecrets(secretNames: SecretName[]): Promise<void> {
+export async function validateSecrets(
+  secretNames: SecretName[],
+): Promise<void> {
   const errors: string[] = [];
 
   for (const secretName of secretNames) {
@@ -299,7 +304,9 @@ export async function validateSecrets(secretNames: SecretName[]): Promise<void> 
   }
 
   if (errors.length > 0) {
-    throw new Error(`Secret validation failed:\n${errors.map((e) => `  - ${e}`).join('\n')}`);
+    throw new Error(
+      `Secret validation failed:\n${errors.map((e) => `  - ${e}`).join("\n")}`,
+    );
   }
 }
 
