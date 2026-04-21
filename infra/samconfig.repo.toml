@@ -1,7 +1,7 @@
 version = 0.1
 
 [default.deploy.parameters]
-stack_name = "hdicr-prod"
+stack_name = "hdicr-production"
 s3_bucket = "hdicr-sam-artifacts-1776018163"
 region = "eu-west-1"
 capabilities = "CAPABILITY_IAM"
@@ -10,6 +10,9 @@ parameter_overrides = [
   "Auth0Domain=kilbowieconsulting.uk.auth0.com",
   "Auth0Audience=https://hdicr.trulyimagined.com",
   "S3BucketName=trulyimagined-media",
+  "ExistingCustomDomainName=hdicr.trulyimagined.com",
+  "ManageCustomDomainResources=true",
+  "ManageBasePathMapping=true",
   "CustomDomainName=hdicr.trulyimagined.com",
   "CertificateArn=arn:aws:acm:eu-west-1:440779547223:certificate/769f5ac8-d0a7-48f4-a822-17348373bab9",
   "HDICRDatabaseURL={{resolve:secretsmanager:/hdicr/prod/db/url:SecretString}}",

@@ -64,6 +64,24 @@ Parameters:
     Type: String
     Default: hdicr.trulyimagined.com
 
+  ExistingCustomDomainName:
+    Type: String
+    Default: hdicr.trulyimagined.com
+
+  ManageCustomDomainResources:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+
+  ManageBasePathMapping:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+
   CertificateArn:
     Type: String
 
@@ -78,6 +96,17 @@ Parameters:
   JwtSigningKey:
     Type: String
     NoEcho: true
+
+Conditions:
+  ShouldCreateCustomDomain: !Equals [!Ref ManageCustomDomainResources, "true"]
+  ShouldCreateBasePathMapping: !Equals [!Ref ManageBasePathMapping, "true"]
+  ShouldCreateBasePathMappingWithManagedDomain: !And
+    - !Condition ShouldCreateBasePathMapping
+    - !Condition ShouldCreateCustomDomain
+  ShouldCreateBasePathMappingWithExistingDomain: !And
+    - !Condition ShouldCreateBasePathMapping
+    - !Not
+      - !Condition ShouldCreateCustomDomain
 
 Resources:
   HDICRApi:
@@ -167,6 +196,7 @@ Resources:
 
   HDICRCustomDomain:
     Type: AWS::ApiGateway::DomainName
+    Condition: ShouldCreateCustomDomain
     Properties:
       DomainName: !Ref CustomDomainName
       RegionalCertificateArn: !Ref CertificateArn
@@ -174,8 +204,9 @@ Resources:
         Types:
           - REGIONAL
 
-  HDICRBasePathMapping:
+  HDICRBasePathMappingManagedDomain:
     Type: AWS::ApiGateway::BasePathMapping
+    Condition: ShouldCreateBasePathMappingWithManagedDomain
     DependsOn:
       - HDICRApiprodStage
       - HDICRCustomDomain
@@ -184,8 +215,21 @@ Resources:
       RestApiId: !Ref HDICRApi
       Stage: prod
 
+  HDICRBasePathMappingExistingDomain:
+    Type: AWS::ApiGateway::BasePathMapping
+    Condition: ShouldCreateBasePathMappingWithExistingDomain
+    DependsOn:
+      - HDICRApiprodStage
+    Properties:
+      DomainName: !Ref ExistingCustomDomainName
+      RestApiId: !Ref HDICRApi
+      Stage: prod
+
 Outputs:
   ApiEndpoint:
     Value: !Sub https://${HDICRApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
   CustomDomain:
-    Value: !Ref CustomDomainName
+    Value: !If
+      - ShouldCreateCustomDomain
+      - !Ref CustomDomainName
+      - !Ref ExistingCustomDomainName
