@@ -79,7 +79,7 @@ export class DatabaseClient {
     params?: any[]
   ): Promise<QueryResult<T>> {
     return this.transaction(async (client) => {
-      await client.query('SET LOCAL app.current_tenant_id = $1', [tenantId]);
+      await client.query("SELECT pg_catalog.set_config('app.current_tenant_id', $1, true)", [tenantId]);
       return client.query<T>(text, params);
     });
   }

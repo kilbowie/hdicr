@@ -30,14 +30,6 @@ const corsHeaders = {
 
 const NonEmptyString = z.string().trim().min(1);
 
-const ActorIdPathSchema = z.object({
-  actorId: NonEmptyString,
-});
-
-const RequestIdPathSchema = z.object({
-  requestId: NonEmptyString,
-});
-
 const PaginationQuerySchema = z.object({
   limit: z.coerce.number().int().min(0).max(500).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -153,6 +145,11 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       return withCorrelation(await requestLicense(event, tenantId));
     }
 
+    // has-pending-verification must be checked before the generic actor/ catch-all
+    if (path.startsWith('/v1/license/actor/') && path.endsWith('/has-pending-verification') && httpMethod === 'GET') {
+      return withCorrelation(await checkHasPendingVerification(event, tenantId));
+    }
+
     if (path.startsWith('/v1/license/actor/') && httpMethod === 'GET') {
       return withCorrelation(await getLicenseRequests(event, tenantId));
     }
@@ -163,6 +160,35 @@ export const handler: APIGatewayProxyHandler = async (event) => {
 
     if (path.startsWith('/v1/license/') && path.endsWith('/reject') && httpMethod === 'POST') {
       return withCorrelation(await rejectLicense(event, tenantId));
+    }
+
+    // /v1/licensing/ namespace — alias routes used by TI web app
+    if (path === '/v1/licensing/actor-id' && httpMethod === 'GET') {
+      return withCorrelation(await resolveActorId(event, tenantId));
+    }
+
+    if (path === '/v1/licensing/actor-requests' && httpMethod === 'GET') {
+      return withCorrelation(await listActorRequestsAlias(event, tenantId));
+    }
+
+    if (path === '/v1/licensing/request' && httpMethod === 'GET') {
+      return withCorrelation(await getLicensingRequestByIdAlias(event, tenantId));
+    }
+
+    if (path === '/v1/licensing/decision' && httpMethod === 'POST') {
+      return withCorrelation(await applyDecision(event, tenantId));
+    }
+
+    if (path === '/v1/licensing/actor/licenses-and-stats' && httpMethod === 'GET') {
+      return withCorrelation(await getActorLicensesAndStats(event, tenantId));
+    }
+
+    if (path === '/v1/licensing/agent-actor-data' && httpMethod === 'GET') {
+      return withCorrelation(await getAgentActorData(event, tenantId));
+    }
+
+    if (path === '/v1/licensing/representation/active' && httpMethod === 'GET') {
+      return withCorrelation(await checkRepresentationActive(event, tenantId));
     }
 
     return {
@@ -255,20 +281,19 @@ async function requestLicense(event: APIGatewayProxyEvent, tenantId: string) {
 }
 
 /**
- * Get license requests for an actor
+ * Get license requests for an actor — path: /v1/license/actor/{actorId}
  */
 async function getLicenseRequests(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsedPath = ActorIdPathSchema.safeParse(event.pathParameters ?? {});
-  if (!parsedPath.success) {
-    return validationErrorResponse(parsedPath.error);
+  const segments = event.path.split('/').filter(Boolean);
+  const actorId = segments[3]; // ['v1', 'license', 'actor', '<actorId>']
+  if (!actorId) {
+    return validationErrorResponse('actorId is required in path');
   }
 
   const parsedQuery = PaginationQuerySchema.safeParse(event.queryStringParameters ?? {});
   if (!parsedQuery.success) {
     return validationErrorResponse(parsedQuery.error);
   }
-
-  const { actorId } = parsedPath.data;
   const { limit, offset } = parsedQuery.data;
 
   const result = await db.queryWithTenant(tenantId, queries.licensing.getByActor, [
@@ -303,15 +328,14 @@ async function getLicenseRequests(event: APIGatewayProxyEvent, tenantId: string)
 }
 
 /**
- * Approve a license request
+ * Approve a license request — path: /v1/license/{requestId}/approve
  */
 async function approveLicense(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsedPath = RequestIdPathSchema.safeParse(event.pathParameters ?? {});
-  if (!parsedPath.success) {
-    return validationErrorResponse(parsedPath.error);
+  const segments = event.path.split('/').filter(Boolean);
+  const requestId = segments[2]; // ['v1', 'license', '<requestId>', 'approve']
+  if (!requestId) {
+    return validationErrorResponse('requestId is required in path');
   }
-
-  const { requestId } = parsedPath.data;
 
   const result = await db.queryWithTenant(tenantId, queries.licensing.approve, [
     requestId,
@@ -344,20 +368,19 @@ async function approveLicense(event: APIGatewayProxyEvent, tenantId: string) {
 }
 
 /**
- * Reject a license request
+ * Reject a license request — path: /v1/license/{requestId}/reject
  */
 async function rejectLicense(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsedPath = RequestIdPathSchema.safeParse(event.pathParameters ?? {});
-  if (!parsedPath.success) {
-    return validationErrorResponse(parsedPath.error);
+  const segments = event.path.split('/').filter(Boolean);
+  const requestId = segments[2]; // ['v1', 'license', '<requestId>', 'reject']
+  if (!requestId) {
+    return validationErrorResponse('requestId is required in path');
   }
 
   const parsedBody = parseJsonBody(event, RejectLicenseSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
   }
-
-  const { requestId } = parsedPath.data;
   const { reason } = parsedBody.data;
 
   const result = await db.queryWithTenant(tenantId, queries.licensing.reject, [
@@ -388,6 +411,262 @@ async function rejectLicense(event: APIGatewayProxyEvent, tenantId: string) {
         rejectedAt: request.rejected_at,
         rejectionReason: request.rejection_reason,
       },
+    }),
+  };
+}
+
+// ======================== /v1/licensing/ alias handlers ========================
+
+async function resolveActorId(event: APIGatewayProxyEvent, tenantId: string) {
+  const auth0UserId = event.queryStringParameters?.auth0UserId?.trim();
+  if (!auth0UserId) {
+    return validationErrorResponse('auth0UserId query parameter is required');
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    'SELECT id FROM actors WHERE auth0_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1',
+    [auth0UserId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ actorId: result.rows[0]?.id ?? null }),
+  };
+}
+
+async function listActorRequestsAlias(event: APIGatewayProxyEvent, tenantId: string) {
+  const actorId = event.queryStringParameters?.actorId?.trim();
+  const status = event.queryStringParameters?.status?.trim();
+  const limit = Math.min(parseInt(event.queryStringParameters?.limit ?? '50', 10), 500);
+  const offset = Math.max(parseInt(event.queryStringParameters?.offset ?? '0', 10), 0);
+
+  if (!actorId) {
+    return validationErrorResponse('actorId query parameter is required');
+  }
+
+  const params: unknown[] = [tenantId, actorId];
+  let query = `SELECT * FROM licensing_requests WHERE tenant_id = $1 AND actor_id = $2::uuid`;
+
+  if (status) {
+    params.push(status);
+    query += ` AND status = $${params.length}`;
+  }
+
+  query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+  params.push(limit, offset);
+
+  const result = await db.queryWithTenant(tenantId, query, params);
+  const rows = result.rows as Record<string, unknown>[];
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({
+      requests: rows.map((req) => ({
+        id: req.id,
+        actorId: req.actor_id,
+        requesterName: req.requester_name,
+        requesterEmail: req.requester_email,
+        requesterOrganization: req.requester_organization,
+        projectName: req.project_name,
+        projectDescription: req.project_description,
+        usageType: req.usage_type,
+        intendedUse: req.intended_use,
+        compensationOffered: req.compensation_offered,
+        compensationCurrency: req.compensation_currency,
+        status: req.status,
+        createdAt: req.created_at,
+        approvedAt: req.approved_at,
+        rejectedAt: req.rejected_at,
+        rejectionReason: req.rejection_reason,
+      })),
+      pendingCount: rows.filter((r) => r.status === 'pending').length,
+    }),
+  };
+}
+
+async function getLicensingRequestByIdAlias(event: APIGatewayProxyEvent, tenantId: string) {
+  const requestId = event.queryStringParameters?.id?.trim();
+  if (!requestId) {
+    return validationErrorResponse('id query parameter is required');
+  }
+
+  const result = await db.queryWithTenant(tenantId, queries.licensing.getById, [requestId, tenantId]);
+
+  if (result.rows.length === 0) {
+    return {
+      statusCode: 404,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'Licensing request not found' }),
+    };
+  }
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ request: result.rows[0] }),
+  };
+}
+
+async function applyDecision(event: APIGatewayProxyEvent, tenantId: string) {
+  const parsedBody = parseJsonBody(
+    event,
+    z.object({
+      requestId: NonEmptyString,
+      actorId: NonEmptyString.optional(),
+      action: z.enum(['approve', 'reject']),
+      rejectionReason: z.string().trim().optional(),
+    }),
+  );
+  if (!parsedBody.success) {
+    return parsedBody.response;
+  }
+
+  const { requestId, action, rejectionReason } = parsedBody.data;
+
+  if (action === 'approve') {
+    const result = await db.queryWithTenant(tenantId, queries.licensing.approve, [requestId, tenantId]);
+    if (result.rows.length === 0) {
+      return { statusCode: 404, headers: corsHeaders, body: JSON.stringify({ error: 'Request not found' }) };
+    }
+    return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ decision: result.rows[0] }) };
+  }
+
+  const result = await db.queryWithTenant(tenantId, queries.licensing.reject, [requestId, rejectionReason ?? null, tenantId]);
+  if (result.rows.length === 0) {
+    return { statusCode: 404, headers: corsHeaders, body: JSON.stringify({ error: 'Request not found' }) };
+  }
+  return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ decision: result.rows[0] }) };
+}
+
+async function getActorLicensesAndStats(event: APIGatewayProxyEvent, tenantId: string) {
+  const actorId = event.queryStringParameters?.actorId?.trim();
+  const status = event.queryStringParameters?.status?.trim();
+
+  if (!actorId) {
+    return validationErrorResponse('actorId query parameter is required');
+  }
+
+  const params: unknown[] = [tenantId, actorId];
+  let query = `SELECT * FROM licensing_requests WHERE tenant_id = $1 AND actor_id = $2::uuid`;
+
+  if (status) {
+    params.push(status);
+    query += ` AND status = $${params.length}`;
+  }
+
+  query += ` ORDER BY created_at DESC LIMIT 200`;
+
+  const result = await db.queryWithTenant(tenantId, query, params);
+  const rows = result.rows as Record<string, unknown>[];
+
+  const stats = {
+    total: rows.length,
+    pending: rows.filter((r) => r.status === 'pending').length,
+    approved: rows.filter((r) => r.status === 'approved').length,
+    rejected: rows.filter((r) => r.status === 'rejected').length,
+  };
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({
+      licenses: rows.map((req) => ({
+        id: req.id,
+        actorId: req.actor_id,
+        requesterName: req.requester_name,
+        projectName: req.project_name,
+        usageType: req.usage_type,
+        status: req.status,
+        compensationOffered: req.compensation_offered,
+        compensationCurrency: req.compensation_currency,
+        createdAt: req.created_at,
+        approvedAt: req.approved_at,
+      })),
+      stats,
+    }),
+  };
+}
+
+async function getAgentActorData(event: APIGatewayProxyEvent, tenantId: string) {
+  const actorId = event.queryStringParameters?.actorId?.trim();
+  if (!actorId) {
+    return validationErrorResponse('actorId query parameter is required');
+  }
+
+  const result = await db.queryWithTenant(tenantId, queries.licensing.getByActor, [tenantId, actorId, 100, 0]);
+  const rows = result.rows as Record<string, unknown>[];
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({
+      licensingRequests: rows.map((req) => ({
+        id: req.id,
+        requesterName: req.requester_name,
+        projectName: req.project_name,
+        usageType: req.usage_type,
+        status: req.status,
+        createdAt: req.created_at,
+      })),
+      licenses: rows
+        .filter((r) => r.status === 'approved')
+        .map((req) => ({
+          id: req.id,
+          projectName: req.project_name,
+          usageType: req.usage_type,
+          approvedAt: req.approved_at,
+        })),
+    }),
+  };
+}
+
+async function checkRepresentationActive(event: APIGatewayProxyEvent, tenantId: string) {
+  const actorId = event.queryStringParameters?.actorId?.trim();
+  if (!actorId) {
+    return validationErrorResponse('actorId query parameter is required');
+  }
+
+  // Confirm actor exists in this tenant; representation state lives in TI DB
+  const result = await db.queryWithTenant(
+    tenantId,
+    'SELECT id FROM actors WHERE id = $1::uuid AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1',
+    [actorId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ active: result.rows.length > 0 }),
+  };
+}
+
+async function checkHasPendingVerification(event: APIGatewayProxyEvent, tenantId: string) {
+  const segments = event.path.split('/').filter(Boolean);
+  const actorId = segments[3]; // ['v1', 'license', 'actor', '<actorId>', 'has-pending-verification']
+  if (!actorId) {
+    return validationErrorResponse('actorId is required in path');
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT EXISTS(
+       SELECT 1 FROM manual_verification_sessions
+       WHERE actor_id = $1::uuid
+         AND tenant_id = $2
+         AND status IN ('pending_scheduling', 'scheduled')
+         AND deleted_at IS NULL
+     ) AS has_pending`,
+    [actorId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({
+      hasManualVerificationRequest: Boolean(result.rows[0]?.has_pending),
     }),
   };
 }

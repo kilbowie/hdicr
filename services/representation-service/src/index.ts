@@ -129,14 +129,33 @@ async function handleGetActorByAuth0(event: APIGatewayProxyEvent, tenantId: stri
     const params = ActorByAuth0Schema.parse({ auth0UserId });
     const result = await db.queryWithTenant(
       tenantId,
-      'SELECT id, auth0_user_id, email, name, created_at FROM actors WHERE auth0_user_id = $1 AND tenant_id = $2',
+      `SELECT id, auth0_user_id, email, first_name, last_name, stage_name,
+              registry_id, verification_status, bio, location, created_at
+       FROM actors WHERE auth0_user_id = $1 AND tenant_id = $2`,
       [params.auth0UserId, tenantId]
     );
+
+    const row = result.rows[0];
+    const actor = row
+      ? {
+          id: row.id,
+          auth0UserId: row.auth0_user_id,
+          email: row.email,
+          firstName: row.first_name,
+          lastName: row.last_name,
+          stageName: row.stage_name,
+          registryId: row.registry_id,
+          verificationStatus: row.verification_status,
+          bio: row.bio,
+          location: row.location,
+          createdAt: row.created_at,
+        }
+      : null;
 
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({ actor: result.rows[0] || null }),
+      body: JSON.stringify({ actor }),
     };
   } catch (error) {
     console.error('Error in handleGetActorByAuth0:', error);
@@ -714,82 +733,58 @@ export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEven
   // Extract tenant_id from authenticated user
   const tenantId = user.tenantId ?? process.env.HDICR_DEFAULT_TENANT_ID ?? 'trulyimagined';
 
-  // Route based on path
+  // Route based on exact path matching (most specific first)
   const path = event.path || '';
   const method = event.httpMethod || '';
 
-  if (path.includes('/actor') && method === 'GET' && path.includes('auth0UserId')) {
+  // Actor / Agent lookups
+  if (path === '/v1/representation/actor' && method === 'GET') {
     return withCorrelation(await handleGetActorByAuth0(event, tenantId));
   }
-
-  if (
-    path.includes('/agent') &&
-    method === 'GET' &&
-    path.includes('auth0UserId') &&
-    !path.includes('registry')
-  ) {
+  if (path === '/v1/representation/agent' && method === 'GET') {
     return withCorrelation(await handleGetAgentByAuth0(event, tenantId));
   }
-
-  if (path.includes('/agent-by-registry') && method === 'GET') {
+  if (path === '/v1/representation/agent-by-registry' && method === 'GET') {
     return withCorrelation(await handleGetAgentByRegistry(event, tenantId));
   }
 
-  if (path.includes('/active') && method === 'GET') {
-    if (path.includes('/request/')) {
-      return withCorrelation(await handleCheckPendingRequest(event, tenantId));
-    }
-    if (path.includes('/relationship/')) {
-      return withCorrelation(await handleCheckActiveRelationship(event, tenantId));
-    }
-    // Default: assume it's for representation
+  // Active representation for actor
+  if (path === '/v1/representation/active' && method === 'GET') {
     return withCorrelation(await handleGetActiveRepresentation(event, tenantId));
   }
 
-  if (
-    path.includes('/request') &&
-    method === 'POST' &&
-    !path.includes('/requests') &&
-    !path.includes('update')
-  ) {
-    return withCorrelation(await handleCreateRepresentationRequest(event, tenantId));
+  // Representation requests — more specific paths before generic /request
+  if (path === '/v1/representation/request/pending' && method === 'GET') {
+    return withCorrelation(await handleCheckPendingRequest(event, tenantId));
   }
-
-  if (path.includes('/requests/incoming') && method === 'GET') {
+  if (path === '/v1/representation/request/update' && method === 'POST') {
+    return withCorrelation(await handleUpdateRepresentationRequest(event, tenantId));
+  }
+  if (path === '/v1/representation/requests/incoming' && method === 'GET') {
     return withCorrelation(await handleListIncomingRequests(event, tenantId));
   }
-
-  if (path.includes('/requests/outgoing') && method === 'GET') {
+  if (path === '/v1/representation/requests/outgoing' && method === 'GET') {
     return withCorrelation(await handleListOutgoingRequests(event, tenantId));
   }
-
-  if (
-    path.includes('/request') &&
-    method === 'GET' &&
-    !path.includes('requests') &&
-    !path.includes('update')
-  ) {
+  if (path === '/v1/representation/request' && method === 'POST') {
+    return withCorrelation(await handleCreateRepresentationRequest(event, tenantId));
+  }
+  if (path === '/v1/representation/request' && method === 'GET') {
     return withCorrelation(await handleGetRepresentationRequest(event, tenantId));
   }
 
-  if (path.includes('/request/update') && method === 'POST') {
-    return withCorrelation(await handleUpdateRepresentationRequest(event, tenantId));
+  // Relationships — more specific paths before generic /relationship
+  if (path === '/v1/representation/relationship/active' && method === 'GET') {
+    return withCorrelation(await handleCheckActiveRelationship(event, tenantId));
   }
-
-  if (path.includes('/relationship') && method === 'POST' && !path.includes('/end')) {
-    return withCorrelation(await handleCreateRelationship(event, tenantId));
-  }
-
-  if (path.includes('/relationship') && method === 'GET' && !path.includes('/end')) {
-    return withCorrelation(await handleGetRelationship(event, tenantId));
-  }
-
-  if (path.includes('/relationship/end') && method === 'POST') {
+  if (path === '/v1/representation/relationship/end' && method === 'POST') {
     return withCorrelation(await handleEndRelationship(event, tenantId));
   }
-
-  if (path.includes('/relationship/active') && method === 'GET') {
-    return withCorrelation(await handleCheckActiveRelationship(event, tenantId));
+  if (path === '/v1/representation/relationship' && method === 'POST') {
+    return withCorrelation(await handleCreateRelationship(event, tenantId));
+  }
+  if (path === '/v1/representation/relationship' && method === 'GET') {
+    return withCorrelation(await handleGetRelationship(event, tenantId));
   }
 
   return {

@@ -47,6 +47,7 @@ const HDICR_MIGRATION_ORDER = [
   '026_hdicr_soft_delete_admin_views.sql',
   '027_hdicr_outbox_sync_events.sql',
   '028_hdicr_drop_ti_domain_tables.sql',
+  '035_fix_sync_event_null_version.sql',
 ];
 
 const TI_MIGRATION_ORDER = [

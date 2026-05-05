@@ -20,7 +20,7 @@ const NonEmptyString = z.string().trim().min(1);
 
 const CheckConsentQuerySchema = z.object({
   actorId: NonEmptyString,
-  consentType: NonEmptyString,
+  consentType: NonEmptyString.optional(),
   projectId: NonEmptyString.optional(),
 });
 
@@ -42,6 +42,26 @@ export async function checkConsent(event: APIGatewayProxyEvent, tenantId: string
     }
 
     const { actorId, consentType, projectId } = parsedQuery.data;
+
+    // When consentType is absent, check consent_ledger for any active policy
+    if (!consentType) {
+      const ledgerResult = await db.queryWithTenant(
+        tenantId,
+        `SELECT id FROM consent_ledger
+         WHERE actor_id = $1::uuid AND tenant_id = $2 AND status = 'active'
+         LIMIT 1`,
+        [actorId, tenantId],
+      );
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          isGranted: ledgerResult.rows.length > 0,
+          actor_id: actorId,
+          status: ledgerResult.rows.length > 0 ? 'active' : 'none',
+          grant_date: null,
+        }),
+      };
+    }
 
     // Query for most recent consent action (granted or revoked)
     let query = `

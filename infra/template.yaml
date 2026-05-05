@@ -159,6 +159,12 @@ Resources:
             RestApiId: !Ref HDICRApi
             Path: /v1/consent/{proxy+}
             Method: ANY
+        ConsentLedgerProxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /v1/consent-ledger/{proxy+}
+            Method: ANY
 
   LicensingFunction:
     Type: AWS::Serverless::Function
@@ -175,6 +181,12 @@ Resources:
           Properties:
             RestApiId: !Ref HDICRApi
             Path: /v1/license/{proxy+}
+            Method: ANY
+        LicensingAliasProxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /v1/licensing/{proxy+}
             Method: ANY
 
   RepresentationFunction:

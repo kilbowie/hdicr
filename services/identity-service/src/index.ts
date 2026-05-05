@@ -30,10 +30,6 @@ const corsHeaders = {
 
 const NonEmptyString = z.string().trim().min(1);
 
-const ActorIdPathSchema = z.object({
-  id: NonEmptyString,
-});
-
 const PaginationQuerySchema = z.object({
   limit: z.coerce.number().int().min(0).max(500).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -354,6 +350,26 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       return withCorrelation(await setActorVerificationStatus(event, tenantId));
     }
 
+    if (path === "/v1/identity/actors/exists" && httpMethod === "GET") {
+      return withCorrelation(await checkActorExistsByAuth0UserId(event, tenantId));
+    }
+
+    if (path === "/v1/identity/user-profile-id" && httpMethod === "GET") {
+      return withCorrelation(await resolveUserProfileId(event, tenantId));
+    }
+
+    if (path === "/v1/identity/registration-status" && httpMethod === "GET") {
+      return withCorrelation(await getActorRegistrationStatus(event, tenantId));
+    }
+
+    if (path === "/v1/identity/resolution" && httpMethod === "GET") {
+      return withCorrelation(await resolveIdentity(event, tenantId));
+    }
+
+    if (path === "/v1/identity/verification-links-summary" && httpMethod === "GET") {
+      return withCorrelation(await getVerificationLinksSummary(event, tenantId));
+    }
+
     if (path.startsWith("/v1/identity/") && httpMethod === "GET") {
       return withCorrelation(await getActorById(event, tenantId));
     }
@@ -459,16 +475,209 @@ async function registerActor(event: APIGatewayProxyEvent, tenantId: string) {
   }
 }
 
+async function checkActorExistsByAuth0UserId(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const auth0UserId = event.queryStringParameters?.auth0UserId?.trim();
+  if (!auth0UserId) {
+    return validationErrorResponse("auth0UserId query parameter is required");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    queries.actors.getByAuth0Id,
+    [auth0UserId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ exists: result.rows.length > 0 }),
+  };
+}
+
+async function resolveUserProfileId(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const auth0UserId = event.queryStringParameters?.auth0UserId?.trim();
+  if (!auth0UserId) {
+    return validationErrorResponse("auth0UserId query parameter is required");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    "SELECT id FROM user_profiles WHERE auth0_user_id = $1 LIMIT 1",
+    [auth0UserId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ userProfileId: result.rows[0]?.id ?? null }),
+  };
+}
+
+async function getActorRegistrationStatus(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const auth0UserId = event.queryStringParameters?.auth0UserId?.trim();
+  if (!auth0UserId) {
+    return validationErrorResponse("auth0UserId query parameter is required");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    queries.actors.getByAuth0Id,
+    [auth0UserId, tenantId],
+  );
+
+  if (result.rows.length === 0) {
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ status: null }),
+    };
+  }
+
+  const actor = result.rows[0];
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({
+      status: {
+        actorId: actor.id,
+        registryId: actor.registry_id,
+        firstName: actor.first_name,
+        lastName: actor.last_name,
+        stageName: actor.stage_name,
+        verificationStatus: actor.verification_status,
+        isFoundingMember: actor.is_founding_member,
+        createdAt: actor.created_at,
+      },
+    }),
+  };
+}
+
+async function resolveIdentity(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const auth0UserId = event.queryStringParameters?.auth0UserId?.trim();
+  if (!auth0UserId) {
+    return validationErrorResponse("auth0UserId query parameter is required");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT up.id AS user_profile_id,
+            a.id AS actor_id,
+            a.verification_status,
+            a.registry_id,
+            a.first_name,
+            a.last_name,
+            a.stage_name
+     FROM user_profiles up
+     LEFT JOIN actors a
+       ON a.auth0_user_id = up.auth0_user_id
+       AND a.tenant_id = $2
+       AND a.deleted_at IS NULL
+     WHERE up.auth0_user_id = $1
+     LIMIT 1`,
+    [auth0UserId, tenantId],
+  );
+
+  if (result.rows.length === 0) {
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ userProfileId: null, resolution: null }),
+    };
+  }
+
+  const row = result.rows[0];
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({
+      userProfileId: row.user_profile_id,
+      resolution: {
+        actorId: row.actor_id ?? null,
+        verificationStatus: row.verification_status ?? null,
+        registryId: row.registry_id ?? null,
+        firstName: row.first_name ?? null,
+        lastName: row.last_name ?? null,
+        stageName: row.stage_name ?? null,
+      },
+    }),
+  };
+}
+
+async function getVerificationLinksSummary(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const auth0UserId = event.queryStringParameters?.auth0UserId?.trim();
+  if (!auth0UserId) {
+    return validationErrorResponse("auth0UserId query parameter is required");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT up.id AS user_profile_id,
+            il.id AS link_id,
+            il.provider,
+            il.verification_level,
+            il.assurance_level,
+            il.is_active,
+            il.last_verified_at,
+            il.expires_at
+     FROM user_profiles up
+     LEFT JOIN identity_links il
+       ON il.user_profile_id = up.id AND il.is_active = TRUE
+     WHERE up.auth0_user_id = $1`,
+    [auth0UserId],
+  );
+
+  if (result.rows.length === 0) {
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ userProfileId: null, links: [] }),
+    };
+  }
+
+  const userProfileId = result.rows[0].user_profile_id;
+  const links = result.rows
+    .filter((r: Record<string, unknown>) => r.link_id)
+    .map((r: Record<string, unknown>) => ({
+      id: r.link_id,
+      provider: r.provider,
+      verificationLevel: r.verification_level,
+      assuranceLevel: r.assurance_level,
+      isActive: r.is_active,
+      lastVerifiedAt: r.last_verified_at,
+      expiresAt: r.expires_at,
+    }));
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ userProfileId, links }),
+  };
+}
+
 /**
  * Get actor by ID
  */
 async function getActorById(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsedPath = ActorIdPathSchema.safeParse(event.pathParameters ?? {});
-  if (!parsedPath.success) {
-    return validationErrorResponse(parsedPath.error);
+  const segments = event.path.split("/").filter(Boolean);
+  const actorId = segments[2]; // ['v1', 'identity', '<id>']
+  if (!actorId) {
+    return validationErrorResponse("Actor ID is required in path");
   }
-
-  const { id: actorId } = parsedPath.data;
 
   const result = await db.queryWithTenant(tenantId, queries.actors.getById, [
     actorId,
@@ -579,17 +788,16 @@ async function listAdminUsers(tenantId: string) {
  * Update actor profile
  */
 async function updateActor(event: APIGatewayProxyEvent, tenantId: string) {
-  const parsedPath = ActorIdPathSchema.safeParse(event.pathParameters ?? {});
-  if (!parsedPath.success) {
-    return validationErrorResponse(parsedPath.error);
+  const segments = event.path.split("/").filter(Boolean);
+  const actorId = segments[2]; // ['v1', 'identity', '<id>']
+  if (!actorId) {
+    return validationErrorResponse("Actor ID is required in path");
   }
 
   const parsedBody = parseJsonBody(event, UpdateActorSchema);
   if (!parsedBody.success) {
     return parsedBody.response;
   }
-
-  const { id: actorId } = parsedPath.data;
 
   const { firstName, lastName, stageName, bio, location, profileImageUrl } =
     parsedBody.data;
