@@ -48,6 +48,7 @@ const HDICR_MIGRATION_ORDER = [
   '027_hdicr_outbox_sync_events.sql',
   '028_hdicr_drop_ti_domain_tables.sql',
   '035_fix_sync_event_null_version.sql',
+  '049_actors_stripe_connect_columns.sql',
   '054_hdicr_stage_name_unique.sql',
   '055_hdicr_actor_locations_jsonb.sql',
 ];
