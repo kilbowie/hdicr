@@ -51,6 +51,7 @@ const HDICR_MIGRATION_ORDER = [
   '049_actors_stripe_connect_columns.sql',
   '054_hdicr_stage_name_unique.sql',
   '055_hdicr_actor_locations_jsonb.sql',
+  '068_hdicr_actor_studio_discovery.sql',
   '098_hdicr_vc_license_link.sql',
 ];
 
