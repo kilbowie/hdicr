@@ -86,6 +86,28 @@ function getSubjectClientId(sub: unknown): string | undefined {
     : undefined;
 }
 
+/**
+ * Parse the allowed-audience config into the shape jsonwebtoken expects.
+ * A single value returns a string (unchanged behaviour); a comma-separated
+ * list returns an array so multiple audiences are accepted during a domain
+ * cutover (e.g. https://hdicr.com and the legacy https://hdicr.trulyimagined.com).
+ */
+function parseAllowedAudiences(
+  raw: string | undefined,
+): string | [string, ...string[]] | undefined {
+  const audiences = (raw ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (audiences.length === 0) {
+    return undefined;
+  }
+
+  const [first, ...rest] = audiences;
+  return rest.length === 0 ? first : [first, ...rest];
+}
+
 // ==================== AUTH0 JWT VALIDATION ====================
 
 export type AuthValidationResult = {
@@ -106,13 +128,18 @@ export async function validateAuth0TokenWithStatus(
   const token = authHeader.substring(7);
 
   try {
+    // Accept one or more allowed audiences (comma-separated) so a custom-domain
+    // cutover can keep the old audience valid alongside the new one during
+    // transition. jsonwebtoken matches the token's `aud` against any entry.
+    const audience = parseAllowedAudiences(process.env.AUTH0_AUDIENCE);
+
     // Verify JWT with Auth0's public key
     const decoded = await new Promise<JwtClaims>((resolve, reject) => {
       jwt.verify(
         token,
         getKey,
         {
-          audience: process.env.AUTH0_AUDIENCE,
+          audience,
           issuer: `https://${process.env.AUTH0_DOMAIN}/`,
           algorithms: ["RS256"],
         },

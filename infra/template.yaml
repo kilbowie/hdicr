@@ -6,7 +6,7 @@ Globals:
   Function:
     Timeout: 30
     MemorySize: 512
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     Environment:
       Variables:
         NODE_ENV: !Ref Environment
@@ -38,6 +38,9 @@ Parameters:
 
   Auth0Audience:
     Type: String
+    # Comma-separated list of accepted API audiences. During the hdicr.com
+    # cutover set both the new and legacy identifiers so existing TI tokens keep
+    # validating, e.g. "https://hdicr.com,https://hdicr.trulyimagined.com".
     Default: https://hdicr.trulyimagined.com
 
   HDICRDefaultTenantId:
@@ -85,6 +88,23 @@ Parameters:
   CertificateArn:
     Type: String
 
+  # --- hdicr.com custom domain (opt-in; enabled once the ACM cert is issued) ---
+  HdicrComDomainName:
+    Type: String
+    Default: hdicr.com
+
+  HdicrComCertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM cert ARN (eu-west-1) for hdicr.com. Required when ManageHdicrComDomain=true.
+
+  ManageHdicrComDomain:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+
   AUTH0ClientId:
     Type: String
     NoEcho: true
@@ -98,6 +118,7 @@ Parameters:
     NoEcho: true
 
 Conditions:
+  ShouldManageHdicrComDomain: !Equals [!Ref ManageHdicrComDomain, "true"]
   ShouldCreateCustomDomain: !Equals [!Ref ManageCustomDomainResources, "true"]
   ShouldCreateBasePathMapping: !Equals [!Ref ManageBasePathMapping, "true"]
   ShouldCreateBasePathMappingWithManagedDomain: !And
@@ -221,7 +242,6 @@ Resources:
     Condition: ShouldCreateBasePathMappingWithManagedDomain
     DependsOn:
       - HDICRApiprodStage
-      - HDICRCustomDomain
     Properties:
       DomainName: !Ref HDICRCustomDomain
       RestApiId: !Ref HDICRApi
@@ -237,6 +257,27 @@ Resources:
       RestApiId: !Ref HDICRApi
       Stage: prod
 
+  # --- hdicr.com custom domain (opt-in) — runs alongside the legacy domain ---
+  HDICRComCustomDomain:
+    Type: AWS::ApiGateway::DomainName
+    Condition: ShouldManageHdicrComDomain
+    Properties:
+      DomainName: !Ref HdicrComDomainName
+      RegionalCertificateArn: !Ref HdicrComCertificateArn
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  HDICRComBasePathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Condition: ShouldManageHdicrComDomain
+    DependsOn:
+      - HDICRApiprodStage
+    Properties:
+      DomainName: !Ref HDICRComCustomDomain
+      RestApiId: !Ref HDICRApi
+      Stage: prod
+
 Outputs:
   ApiEndpoint:
     Value: !Sub https://${HDICRApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
@@ -245,3 +286,10 @@ Outputs:
       - ShouldCreateCustomDomain
       - !Ref CustomDomainName
       - !Ref ExistingCustomDomainName
+  HdicrComDomain:
+    Condition: ShouldManageHdicrComDomain
+    Value: !Ref HdicrComDomainName
+  HdicrComDomainTarget:
+    Condition: ShouldManageHdicrComDomain
+    Description: Point the Cloudflare CNAME for hdicr.com at this API Gateway regional domain.
+    Value: !GetAtt HDICRComCustomDomain.RegionalDomainName

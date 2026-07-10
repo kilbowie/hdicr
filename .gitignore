@@ -41,5 +41,9 @@ coverage/
 .aws-sam/
 samconfig.toml
 
+# SAM/Lambda build artifacts
+function.zip
+**/function.zip
+
 Thumbs.db
 .vercel

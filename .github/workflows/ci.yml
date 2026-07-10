@@ -1,0 +1,46 @@
+name: CI
+
+# Runs on every PR and on pushes to non-main branches. Type-checks, tests, and
+# validates the SAM template. No AWS credentials are used here — this gate is
+# safe to run on forks/PRs.
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@8.15.0 --activate
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm type-check
+
+      - name: Test
+        run: pnpm test
+
+      # SAM CLI is pre-installed on ubuntu-latest GitHub-hosted runners.
+      - name: Validate SAM template
+        run: sam validate -t infra/template.yaml --lint
+
+      - name: Migration manifest check
+        run: node scripts/check-migrations.mjs

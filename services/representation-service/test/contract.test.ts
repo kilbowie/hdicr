@@ -23,10 +23,11 @@ vi.mock('@trulyimagined/middleware', () => ({
       user: {
         sub: 'client@clients',
         tenantId: 'trulyimagined',
-        scopes: ['hdicr:representation:read'],
+        scopes: ['hdicr:representation:read', 'hdicr:representation:write'],
       },
     };
   }),
+  hasScope: vi.fn().mockReturnValue(true),
   getOrCreateCorrelationId: vi.fn().mockReturnValue('test-correlation-id'),
   withCorrelationHeaders: vi.fn((headers, correlationId) => ({
     ...headers,
@@ -44,7 +45,7 @@ import { handler } from '../src/index';
 
 describe('[SEP-025] Representation Service - Contract Tests', () => {
   describe('Actor Endpoints', () => {
-    it('GET /actor should return 404 when auth0UserId query trigger is missing', async () => {
+    it('GET /actor should return 400 when auth0UserId query param is missing', async () => {
       const event: Partial<APIGatewayProxyEvent> = {
         httpMethod: 'GET',
         path: '/v1/representation/actor',
@@ -53,11 +54,13 @@ describe('[SEP-025] Representation Service - Contract Tests', () => {
       };
 
       const response = await handler(event as APIGatewayProxyEvent);
-      expect(response.statusCode).toBe(404);
+      // A missing required query param is a client error; the OpenAPI contract
+      // documents 400 (not 404) for this case.
+      expect(response.statusCode).toBe(400);
       expect(response.headers['Content-Type']).toBe('application/json');
     });
 
-    it('GET /agent should return 404 when auth0UserId query trigger is missing', async () => {
+    it('GET /agent should return 400 when auth0UserId query param is missing', async () => {
       const event: Partial<APIGatewayProxyEvent> = {
         httpMethod: 'GET',
         path: '/v1/representation/agent',
@@ -66,7 +69,7 @@ describe('[SEP-025] Representation Service - Contract Tests', () => {
       };
 
       const response = await handler(event as APIGatewayProxyEvent);
-      expect(response.statusCode).toBe(404);
+      expect(response.statusCode).toBe(400);
     });
 
     it('GET /agent-by-registry should return 400 when registryId is missing', async () => {

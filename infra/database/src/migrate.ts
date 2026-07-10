@@ -49,10 +49,15 @@ const HDICR_MIGRATION_ORDER = [
   '028_hdicr_drop_ti_domain_tables.sql',
   '035_fix_sync_event_null_version.sql',
   '049_actors_stripe_connect_columns.sql',
+  '050_hdicr_verification_method.sql',
+  '053_hdicr_gen_ai_alpha.sql',
   '054_hdicr_stage_name_unique.sql',
   '055_hdicr_actor_locations_jsonb.sql',
   '068_hdicr_actor_studio_discovery.sql',
   '098_hdicr_vc_license_link.sql',
+  '124_hdicr_actor_generation_ready.sql',
+  '126_hdicr_platform_default_actor.sql',
+  '127_hdicr_actor_self_generation.sql',
 ];
 
 const TI_MIGRATION_ORDER = [

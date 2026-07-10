@@ -8,17 +8,20 @@ capabilities = "CAPABILITY_IAM"
 parameter_overrides = [
   "Environment=production",
   "Auth0Domain=kilbowieconsulting.uk.auth0.com",
-  "Auth0Audience=https://hdicr.trulyimagined.com",
+  # Accept both audiences during the hdicr.com cutover; drop the legacy one once TI has flipped.
+  "Auth0Audience=https://hdicr.com,https://hdicr.trulyimagined.com",
   "S3BucketName=trulyimagined-media",
   "ExistingCustomDomainName=hdicr.trulyimagined.com",
   "ManageCustomDomainResources=true",
   "ManageBasePathMapping=true",
   "CustomDomainName=hdicr.trulyimagined.com",
   "CertificateArn=arn:aws:acm:eu-west-1:440779547223:certificate/769f5ac8-d0a7-48f4-a822-17348373bab9",
+  # hdicr.com custom domain — set the ACM cert ARN (eu-west-1) then flip ManageHdicrComDomain=true.
+  "ManageHdicrComDomain=true",
+  "HdicrComDomainName=hdicr.com",
+  "HdicrComCertificateArn=arn:aws:acm:eu-west-1:440779547223:certificate/85c63068-ee30-494b-b68a-2a6d9cc678db",
   "HDICRDatabaseURL={{resolve:secretsmanager:/hdicr/prod/db/url:SecretString}}",
   "AUTH0ClientId={{resolve:secretsmanager:/hdicr/prod/auth0/client_id:SecretString}}",
   "AUTH0ClientSecret={{resolve:secretsmanager:/hdicr/prod/auth0/client_secret:SecretString}}",
-  "StripeSecretKey={{resolve:secretsmanager:/hdicr/prod/stripe/secret_key:SecretString}}",
-  "StripeWebhookSecret={{resolve:secretsmanager:/hdicr/prod/stripe/webhook_secret:SecretString}}",
   "JwtSigningKey={{resolve:secretsmanager:/hdicr/prod/jwt/signing_key:SecretString}}"
 ]

@@ -2,6 +2,7 @@ import { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda';
 import { DatabaseClient } from '@trulyimagined/database';
 import {
   validateAuth0TokenWithStatus,
+  hasScope,
   getOrCreateCorrelationId,
   withCorrelationHeaders,
 } from '@trulyimagined/middleware';
@@ -730,12 +731,27 @@ export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEven
 
   const user = authResult.user;
 
-  // Extract tenant_id from authenticated user
-  const tenantId = user.tenantId ?? process.env.HDICR_DEFAULT_TENANT_ID ?? 'trulyimagined';
-
   // Route based on exact path matching (most specific first)
   const path = event.path || '';
   const method = event.httpMethod || '';
+
+  // Scope-based authorization: require the appropriate scope per HTTP method,
+  // matching the consent/licensing/identity services.
+  const requiredScope =
+    method === 'GET' ? 'hdicr:representation:read' : 'hdicr:representation:write';
+  if (!hasScope(user, requiredScope)) {
+    return {
+      statusCode: 403,
+      headers: responseHeaders,
+      body: JSON.stringify({
+        error: 'Forbidden',
+        detail: `Missing required scope: ${requiredScope}`,
+      }),
+    };
+  }
+
+  // Extract tenant_id from authenticated user
+  const tenantId = user.tenantId ?? process.env.HDICR_DEFAULT_TENANT_ID ?? 'trulyimagined';
 
   // Actor / Agent lookups
   if (path === '/v1/representation/actor' && method === 'GET') {

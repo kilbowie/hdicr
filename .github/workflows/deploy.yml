@@ -1,0 +1,64 @@
+name: Deploy (production)
+
+# Deploys the HDICR SAM stack on merge to main. Uses short-lived credentials via
+# GitHub OIDC (no long-lived AWS keys). The `production` environment can be
+# configured in repo Settings → Environments to require a manual approval before
+# each deploy — recommended, and required whenever a change alters auth/scope
+# behaviour (e.g. representation-service scope enforcement) so the matching Auth0
+# scopes are granted first.
+#
+# One-time setup (see docs/hdicr/HDICR_CI_CD_setup.md):
+#   - Create a GitHub OIDC IAM role trusting repo kilbowie/hdicr (ref main).
+#   - Set repo variable AWS_DEPLOY_ROLE_ARN to that role's ARN.
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@8.15.0 --activate
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build service bundles
+        run: pnpm build
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      - name: SAM build
+        run: sam build -t infra/template.yaml
+
+      - name: SAM deploy
+        run: >
+          sam deploy
+          --config-file infra/samconfig.repo.toml
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
+          --no-progressbar

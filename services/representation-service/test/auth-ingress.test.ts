@@ -27,6 +27,7 @@ vi.mock('@trulyimagined/middleware', () => ({
       },
     };
   }),
+  hasScope: vi.fn().mockReturnValue(true),
   getOrCreateCorrelationId: vi.fn().mockReturnValue('test-correlation-id'),
   withCorrelationHeaders: vi.fn((headers, correlationId) => ({
     ...headers,
@@ -34,6 +35,7 @@ vi.mock('@trulyimagined/middleware', () => ({
   })),
 }));
 
+import { hasScope } from '@trulyimagined/middleware';
 import { handler } from '../src/index';
 
 /**
@@ -91,6 +93,34 @@ describe('[SEP-030] Representation Service - Auth Ingress', () => {
 
     const response = await handler(event as APIGatewayProxyEvent);
     expect(response.statusCode).toBe(401);
+  });
+
+  it('should return 403 when authenticated but missing read scope', async () => {
+    vi.mocked(hasScope).mockReturnValueOnce(false);
+    const event: Partial<APIGatewayProxyEvent> = {
+      httpMethod: 'GET',
+      path: '/v1/representation/actor',
+      queryStringParameters: { auth0UserId: 'test-user' },
+      headers: { Authorization: 'Bearer valid-token' },
+    };
+
+    const response = await handler(event as APIGatewayProxyEvent);
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toContain('hdicr:representation:read');
+  });
+
+  it('should return 403 when authenticated but missing write scope', async () => {
+    vi.mocked(hasScope).mockReturnValueOnce(false);
+    const event: Partial<APIGatewayProxyEvent> = {
+      httpMethod: 'POST',
+      path: '/v1/representation/request',
+      headers: { Authorization: 'Bearer valid-token' },
+      body: JSON.stringify({ actorId: 'a', agentId: 'b', message: 'Test' }),
+    };
+
+    const response = await handler(event as APIGatewayProxyEvent);
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toContain('hdicr:representation:write');
   });
 
   it('should handle CORS preflight requests', async () => {
