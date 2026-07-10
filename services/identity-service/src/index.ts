@@ -170,6 +170,24 @@ const ResolveActorSchema = z.object({
   email: z.string().trim().email().nullish(),
 });
 
+// Stamp verification_method + verification_completed_at, keyed by actorId or auth0.
+const StampVerificationMethodSchema = z
+  .object({
+    actorId: z.string().uuid().optional(),
+    auth0UserId: NonEmptyString.optional(),
+    method: z.string().trim().min(1).nullable(),
+  })
+  .refine((v) => Boolean(v.actorId || v.auth0UserId), {
+    message: "actorId or auth0UserId is required",
+  });
+
+// Set verification_status by Auth0 sub (used by the Stripe Identity webhook),
+// returning the previous status so the caller can react to the transition.
+const SetVerificationStatusByAuth0Schema = z.object({
+  auth0UserId: NonEmptyString,
+  status: NonEmptyString,
+});
+
 function validationErrorResponse(error: z.ZodError | string) {
   const details =
     typeof error === "string"
@@ -389,6 +407,18 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       return withCorrelation(await searchActors(event, tenantId));
     }
 
+    if (path === "/v1/identity/by-registry" && httpMethod === "GET") {
+      return withCorrelation(await getActorByRegistryId(event, tenantId));
+    }
+
+    if (path === "/v1/identity/verification-method" && httpMethod === "POST") {
+      return withCorrelation(await stampVerificationMethod(event, tenantId));
+    }
+
+    if (path === "/v1/identity/verification-status" && httpMethod === "POST") {
+      return withCorrelation(await setVerificationStatusByAuth0(event, tenantId));
+    }
+
     if (path.startsWith("/v1/identity/") && httpMethod === "GET") {
       return withCorrelation(await getActorById(event, tenantId));
     }
@@ -591,6 +621,8 @@ function mapActorSummary(a: any) {
     location: a.location,
     registry_id: a.registry_id,
     verification_status: a.verification_status,
+    verification_method: a.verification_method ?? null,
+    verification_completed_at: a.verification_completed_at ?? null,
     is_founding_member: a.is_founding_member,
     profile_image_url: a.profile_image_url,
     created_at: a.created_at,
@@ -622,7 +654,8 @@ async function batchGetActors(event: APIGatewayProxyEvent, tenantId: string) {
   const result = await db.queryWithTenant(
     tenantId,
     `SELECT id, auth0_user_id, email, first_name, last_name, stage_name, bio, location,
-            registry_id, verification_status, is_founding_member, profile_image_url, created_at
+            registry_id, verification_status, verification_method, verification_completed_at,
+            is_founding_member, profile_image_url, created_at
        FROM actors
       WHERE tenant_id = $1
         AND deleted_at IS NULL
@@ -656,7 +689,8 @@ async function searchActors(event: APIGatewayProxyEvent, tenantId: string) {
   const result = await db.queryWithTenant(
     tenantId,
     `SELECT id, auth0_user_id, email, first_name, last_name, stage_name, bio, location,
-            registry_id, verification_status, is_founding_member, profile_image_url, created_at
+            registry_id, verification_status, verification_method, verification_completed_at,
+            is_founding_member, profile_image_url, created_at
        FROM actors
       WHERE tenant_id = $1
         AND deleted_at IS NULL
@@ -671,6 +705,100 @@ async function searchActors(event: APIGatewayProxyEvent, tenantId: string) {
     statusCode: 200,
     headers: corsHeaders,
     body: JSON.stringify({ actors: result.rows.map(mapActorSummary) }),
+  };
+}
+
+/**
+ * GET /v1/identity/by-registry?registryId=TI-XXXXXX
+ * Resolve an actor by human-readable registry id. Returns { actor: ... | null }.
+ * (Stream 3.2b — licensing identity resolution.)
+ */
+async function getActorByRegistryId(event: APIGatewayProxyEvent, tenantId: string) {
+  const registryId = event.queryStringParameters?.registryId?.trim();
+  if (!registryId) {
+    return validationErrorResponse("registryId query parameter is required");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, auth0_user_id, email, first_name, last_name, stage_name, bio, location,
+            registry_id, verification_status, verification_method, verification_completed_at,
+            is_founding_member, profile_image_url, created_at
+       FROM actors
+      WHERE registry_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+      LIMIT 1`,
+    [registryId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ actor: result.rows[0] ? mapActorSummary(result.rows[0]) : null }),
+  };
+}
+
+/**
+ * POST /v1/identity/verification-method { actorId? | auth0UserId?, method }
+ * Stamp verification_method + verification_completed_at on the actor (audit trail
+ * after a verification completes). Returns { updated: <rowCount> }.
+ * (Stream 3.3 — Family 2.)
+ */
+async function stampVerificationMethod(event: APIGatewayProxyEvent, tenantId: string) {
+  const parsed = parseJsonBody(event, StampVerificationMethodSchema);
+  if (!parsed.success) return parsed.response;
+  const { actorId, auth0UserId, method } = parsed.data;
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `UPDATE actors
+        SET verification_method = $1,
+            verification_completed_at = NOW(),
+            updated_at = NOW()
+      WHERE tenant_id = $2 AND deleted_at IS NULL
+        AND ( ($3::uuid IS NOT NULL AND id = $3::uuid)
+           OR ($4::text IS NOT NULL AND auth0_user_id = $4::text) )
+      RETURNING id`,
+    [method, tenantId, actorId ?? null, auth0UserId ?? null],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ updated: result.rows.length }),
+  };
+}
+
+/**
+ * POST /v1/identity/verification-status { auth0UserId, status }
+ * Set verification_status by Auth0 sub (Stripe Identity webhook). Returns
+ * { id, previousStatus } so the caller can act on the transition.
+ * (Stream 3.3 — Family S.)
+ */
+async function setVerificationStatusByAuth0(event: APIGatewayProxyEvent, tenantId: string) {
+  const parsed = parseJsonBody(event, SetVerificationStatusByAuth0Schema);
+  if (!parsed.success) return parsed.response;
+  const { auth0UserId, status } = parsed.data;
+
+  const prev = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, verification_status FROM actors
+      WHERE auth0_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1`,
+    [auth0UserId, tenantId],
+  );
+  const previousStatus = prev.rows[0]?.verification_status ?? null;
+
+  const upd = await db.queryWithTenant(
+    tenantId,
+    `UPDATE actors SET verification_status = $1, updated_at = NOW()
+      WHERE auth0_user_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+      RETURNING id`,
+    [status, auth0UserId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ id: upd.rows[0]?.id ?? null, previousStatus }),
   };
 }
 

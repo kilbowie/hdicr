@@ -154,6 +154,90 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/identity/by-registry:
+    get:
+      tags: [Identity]
+      operationId: getActorByRegistryId
+      summary: Resolve an actor by human-readable registry id
+      parameters:
+        - in: query
+          name: registryId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Resolved actor (or null)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actor: { type: object, nullable: true }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/verification-method:
+    post:
+      tags: [Identity]
+      operationId: stampVerificationMethod
+      summary: Stamp verification_method + completed_at (by actorId or auth0UserId)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                actorId: { type: string, format: uuid }
+                auth0UserId: { type: string }
+                method: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Number of rows updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/verification-status:
+    post:
+      tags: [Identity]
+      operationId: setVerificationStatusByAuth0
+      summary: Set verification_status by Auth0 sub, returning the previous status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [auth0UserId, status]
+              properties:
+                auth0UserId: { type: string }
+                status: { type: string }
+      responses:
+        '200':
+          description: Updated actor id + previous status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, nullable: true }
+                  previousStatus: { type: string, nullable: true }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/identity:
     get:
       tags: [Identity]
