@@ -90,6 +90,70 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/identity/batch:
+    get:
+      tags: [Identity]
+      operationId: batchGetActors
+      summary: Bulk actor lookup by id and/or auth0 user id
+      parameters:
+        - in: query
+          name: ids
+          schema: { type: string }
+          description: Comma-separated actor ids (max 500).
+        - in: query
+          name: auth0Ids
+          schema: { type: string }
+          description: Comma-separated Auth0 user ids (max 500).
+      responses:
+        '200':
+          description: Matching actors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actors:
+                    type: array
+                    items: { type: object }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/search:
+    get:
+      tags: [Identity]
+      operationId: searchActors
+      summary: Case-insensitive stage-name search
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string }
+          description: Stage-name substring to match.
+        - in: query
+          name: verifiedOnly
+          schema: { type: boolean }
+          description: When true, only verified actors are returned.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Matching actors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actors:
+                    type: array
+                    items: { type: object }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/identity:
     get:
       tags: [Identity]

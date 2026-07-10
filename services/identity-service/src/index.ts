@@ -381,6 +381,14 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       return withCorrelation(await getVerificationLinksSummary(event, tenantId));
     }
 
+    if (path === "/v1/identity/batch" && httpMethod === "GET") {
+      return withCorrelation(await batchGetActors(event, tenantId));
+    }
+
+    if (path === "/v1/identity/search" && httpMethod === "GET") {
+      return withCorrelation(await searchActors(event, tenantId));
+    }
+
     if (path.startsWith("/v1/identity/") && httpMethod === "GET") {
       return withCorrelation(await getActorById(event, tenantId));
     }
@@ -568,6 +576,102 @@ async function resolveActorByAuth0OrEmail(
   ]);
   const resolved = after.rows[0] ?? { ...emailRow, auth0_user_id: auth0UserId };
   return ok(mapActor(resolved), rebound);
+}
+
+// Shared projection for actor list/batch/search responses.
+function mapActorSummary(a: any) {
+  return {
+    id: a.id,
+    auth0_user_id: a.auth0_user_id,
+    email: a.email,
+    first_name: a.first_name,
+    last_name: a.last_name,
+    stage_name: a.stage_name,
+    bio: a.bio,
+    location: a.location,
+    registry_id: a.registry_id,
+    verification_status: a.verification_status,
+    is_founding_member: a.is_founding_member,
+    profile_image_url: a.profile_image_url,
+    created_at: a.created_at,
+  };
+}
+
+function parseCsvList(raw: string | undefined, max: number): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, max);
+}
+
+/**
+ * GET /v1/identity/batch?ids=a,b,c&auth0Ids=x,y
+ * Bulk actor lookup by id and/or auth0_user_id (bounded at 500 each). Returns
+ * { actors: [...] }. Replaces TI's direct-DB batch reads (Stream 3.2, Family 5).
+ */
+async function batchGetActors(event: APIGatewayProxyEvent, tenantId: string) {
+  const ids = parseCsvList(event.queryStringParameters?.ids, 500);
+  const auth0Ids = parseCsvList(event.queryStringParameters?.auth0Ids, 500);
+
+  if (ids.length === 0 && auth0Ids.length === 0) {
+    return validationErrorResponse("Provide at least one of ids or auth0Ids");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, auth0_user_id, email, first_name, last_name, stage_name, bio, location,
+            registry_id, verification_status, is_founding_member, profile_image_url, created_at
+       FROM actors
+      WHERE tenant_id = $1
+        AND deleted_at IS NULL
+        AND (id = ANY($2::uuid[]) OR auth0_user_id = ANY($3::text[]))`,
+    [tenantId, ids, auth0Ids],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ actors: result.rows.map(mapActorSummary) }),
+  };
+}
+
+/**
+ * GET /v1/identity/search?q=...&verifiedOnly=true&limit=100
+ * Case-insensitive stage-name search. Returns { actors: [...] }. Replaces TI's
+ * direct-DB actors search (Stream 3.2, Family 5).
+ */
+async function searchActors(event: APIGatewayProxyEvent, tenantId: string) {
+  const q = event.queryStringParameters?.q?.trim();
+  if (!q) {
+    return validationErrorResponse("q query parameter is required");
+  }
+  const verifiedOnly = event.queryStringParameters?.verifiedOnly === "true";
+  const rawLimit = Number(event.queryStringParameters?.limit ?? "100");
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 200)
+    : 100;
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, auth0_user_id, email, first_name, last_name, stage_name, bio, location,
+            registry_id, verification_status, is_founding_member, profile_image_url, created_at
+       FROM actors
+      WHERE tenant_id = $1
+        AND deleted_at IS NULL
+        AND stage_name ILIKE $2
+        AND ($3::boolean = FALSE OR verification_status = 'verified')
+      ORDER BY stage_name ASC
+      LIMIT $4`,
+    [tenantId, `%${q}%`, verifiedOnly, limit],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ actors: result.rows.map(mapActorSummary) }),
+  };
 }
 
 async function checkActorExistsByAuth0UserId(
