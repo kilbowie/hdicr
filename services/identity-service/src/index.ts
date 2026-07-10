@@ -163,6 +163,13 @@ const UpdateActorSchema = z
     },
   );
 
+// Resolve an actor by Auth0 sub, falling back to verified email and self-healing
+// a drifted sub (see resolveActorByAuth0OrEmail). email is optional/nullable.
+const ResolveActorSchema = z.object({
+  auth0UserId: NonEmptyString,
+  email: z.string().trim().email().nullish(),
+});
+
 function validationErrorResponse(error: z.ZodError | string) {
   const details =
     typeof error === "string"
@@ -265,6 +272,10 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     // Route based on path and method
     if (path === "/v1/identity/register" && httpMethod === "POST") {
       return withCorrelation(await registerActor(event, tenantId));
+    }
+
+    if (path === "/v1/identity/resolve" && httpMethod === "POST") {
+      return withCorrelation(await resolveActorByAuth0OrEmail(event, tenantId));
     }
 
     if (path === "/v1/identity/admin/users" && httpMethod === "GET") {
@@ -473,6 +484,90 @@ async function registerActor(event: APIGatewayProxyEvent, tenantId: string) {
 
     throw error;
   }
+}
+
+/**
+ * Resolve an actor by Auth0 sub, self-healing the "drifted sub" case.
+ *
+ * After an account is deleted and re-created, the actors row can still carry the
+ * OLD auth0_user_id: registration recovery matched on the verified email but
+ * historically never rebound the sub, so a lookup by the current sub misses even
+ * though the actor exists — and onboarding/consent/verification/booking then
+ * disagree about whether the user is registered. This rebinds the drifted row to
+ * the current sub the first time it is observed. Returns { actor: null } only when
+ * no non-deleted actor exists for either the sub or the verified email.
+ *
+ * Replaces TI's direct-DB resolveActorByAuth0OrEmailInternal (Stream 3, Family 4).
+ */
+async function resolveActorByAuth0OrEmail(
+  event: APIGatewayProxyEvent,
+  tenantId: string,
+) {
+  const parsedBody = parseJsonBody(event, ResolveActorSchema);
+  if (!parsedBody.success) {
+    return parsedBody.response;
+  }
+  const { auth0UserId, email } = parsedBody.data;
+
+  const mapActor = (a: any) => ({
+    id: a.id,
+    auth0_user_id: a.auth0_user_id,
+    email: a.email,
+    first_name: a.first_name,
+    last_name: a.last_name,
+    stage_name: a.stage_name,
+    registry_id: a.registry_id,
+    verification_status: a.verification_status,
+    is_founding_member: a.is_founding_member,
+    created_at: a.created_at,
+  });
+
+  const ok = (actor: unknown, rebound: boolean) => ({
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ actor, rebound }),
+  });
+
+  // 1. Direct match on the current sub.
+  const direct = await db.queryWithTenant(tenantId, queries.actors.getByAuth0Id, [
+    auth0UserId,
+    tenantId,
+  ]);
+  if (direct.rows[0]) return ok(mapActor(direct.rows[0]), false);
+
+  // 2. No email → cannot recover.
+  if (!email) return ok(null, false);
+
+  // 3. Recover by verified email.
+  const byEmail = await db.queryWithTenant(tenantId, queries.actors.getByEmail, [
+    email,
+    tenantId,
+  ]);
+  const emailRow = byEmail.rows[0];
+  if (!emailRow) return ok(null, false);
+  if (emailRow.auth0_user_id === auth0UserId) return ok(mapActor(emailRow), false);
+
+  // 4. Drifted sub: rebind to the current sub. The direct lookup above missed, so
+  //    no row already owns this sub — no unique collision. Soft-fail regardless.
+  let rebound = false;
+  try {
+    await db.queryWithTenant(
+      tenantId,
+      `UPDATE actors SET auth0_user_id = $1, updated_at = NOW()
+       WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL`,
+      [auth0UserId, emailRow.id, tenantId],
+    );
+    rebound = true;
+  } catch (err) {
+    console.error("[IDENTITY-SERVICE] resolve rebind failed:", err);
+  }
+
+  const after = await db.queryWithTenant(tenantId, queries.actors.getByAuth0Id, [
+    auth0UserId,
+    tenantId,
+  ]);
+  const resolved = after.rows[0] ?? { ...emailRow, auth0_user_id: auth0UserId };
+  return ok(mapActor(resolved), rebound);
 }
 
 async function checkActorExistsByAuth0UserId(
@@ -802,16 +897,35 @@ async function updateActor(event: APIGatewayProxyEvent, tenantId: string) {
   const { firstName, lastName, stageName, bio, location, profileImageUrl } =
     parsedBody.data;
 
-  const result = await db.queryWithTenant(tenantId, queries.actors.update, [
-    actorId,
-    firstName,
-    lastName,
-    stageName,
-    bio,
-    location,
-    profileImageUrl,
-    tenantId,
-  ]);
+  let result;
+  try {
+    result = await db.queryWithTenant(tenantId, queries.actors.update, [
+      actorId,
+      firstName,
+      lastName,
+      stageName,
+      bio,
+      location,
+      profileImageUrl,
+      tenantId,
+    ]);
+  } catch (error: any) {
+    // Unique-constraint violation — the only unique updatable field is stage_name
+    // (migration 054). Surface a clean 409 so callers can show a field-level error
+    // instead of a generic 500.
+    if (error.code === "23505") {
+      return {
+        statusCode: 409,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          error: "Stage name already taken",
+          field: "stageName",
+          message: "Another actor is already using this stage name.",
+        }),
+      };
+    }
+    throw error;
+  }
 
   if (result.rows.length === 0) {
     return {

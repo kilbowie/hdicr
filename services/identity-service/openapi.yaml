@@ -47,6 +47,49 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/identity/resolve:
+    post:
+      tags: [Identity]
+      operationId: resolveActorByAuth0OrEmail
+      summary: Resolve an actor by Auth0 sub, falling back to verified email
+      description: >-
+        Resolves the actor for an Auth0 sub. If none matches the sub but one
+        matches the (verified) email, the actor row is rebound to the current sub
+        (self-healing the "drifted sub" case after account delete/recreate) and
+        returned. Returns actor=null when neither the sub nor the email match.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [auth0UserId]
+              properties:
+                auth0UserId:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                  nullable: true
+      responses:
+        '200':
+          description: Resolved actor (or null)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actor:
+                    type: object
+                    nullable: true
+                  rebound:
+                    type: boolean
+                    description: True when a drifted sub was rebound during this call.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/identity:
     get:
       tags: [Identity]
@@ -110,6 +153,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
