@@ -238,6 +238,58 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/identity/by-user-profile:
+    get:
+      tags: [Identity]
+      operationId: getActorByUserProfileId
+      summary: Full actor-identity detail by user_profile_id (admin user view)
+      parameters:
+        - in: query
+          name: userProfileId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Actor identity (or null) with locations/verified_at projection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actor: { type: object, nullable: true }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/identity/anonymise:
+    post:
+      tags: [Identity]
+      operationId: anonymiseActor
+      summary: GDPR erasure of an actor's identity PII (by Auth0 sub)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [auth0UserId]
+              properties:
+                auth0UserId: { type: string }
+      responses:
+        '200':
+          description: Number of rows anonymised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/identity:
     get:
       tags: [Identity]

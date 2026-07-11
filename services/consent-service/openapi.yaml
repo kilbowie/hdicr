@@ -166,6 +166,66 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/consent/log:
+    get:
+      tags: [Consent]
+      operationId: listConsentLog
+      summary: Immutable per-actor consent event log (append-only compliance view)
+      parameters:
+        - in: query
+          name: actorId
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Consent log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries: { type: array, items: { type: object } }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/consent/audit-log:
+    get:
+      tags: [Consent]
+      operationId: listAuditLog
+      summary: Platform audit trail (immutable) with optional filters + pagination
+      parameters:
+        - in: query
+          name: resourceType
+          required: false
+          schema: { type: string }
+        - $ref: '#/components/parameters/ActionFilter'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries: { type: array, items: { type: object } }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/consent/enforcement/check:
     post:
       tags: [Consent]
