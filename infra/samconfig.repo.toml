@@ -20,8 +20,9 @@ parameter_overrides = [
   "ManageHdicrComDomain=true",
   "HdicrComDomainName=hdicr.com",
   "HdicrComCertificateArn=arn:aws:acm:eu-west-1:440779547223:certificate/85c63068-ee30-494b-b68a-2a6d9cc678db",
-  "HDICRDatabaseURL={{resolve:secretsmanager:/hdicr/prod/db/url:SecretString}}",
-  "AUTH0ClientId={{resolve:secretsmanager:/hdicr/prod/auth0/client_id:SecretString}}",
-  "AUTH0ClientSecret={{resolve:secretsmanager:/hdicr/prod/auth0/client_secret:SecretString}}",
-  "JwtSigningKey={{resolve:secretsmanager:/hdicr/prod/jwt/signing_key:SecretString}}"
+  # DB connection string is now read from Secrets Manager at runtime by the
+  # functions (DB_URL_SECRET_ARN), not injected as a build-time parameter.
+  # AUTH0ClientSecret / JwtSigningKey are no longer template parameters — the
+  # request path validates tokens via Auth0 JWKS and never used them.
+  "AUTH0ClientId={{resolve:secretsmanager:/hdicr/prod/auth0/client_id:SecretString}}"
 ]
