@@ -188,6 +188,12 @@ const SetVerificationStatusByAuth0Schema = z.object({
   status: NonEmptyString,
 });
 
+// GDPR anonymisation of an actor's identity fields, keyed by Auth0 sub
+// (Stream 3.4 — Family 6). Scrubs PII while keeping the row (FK integrity).
+const AnonymiseActorSchema = z.object({
+  auth0UserId: NonEmptyString,
+});
+
 function validationErrorResponse(error: z.ZodError | string) {
   const details =
     typeof error === "string"
@@ -417,6 +423,15 @@ export const handler: APIGatewayProxyHandler = async (event) => {
 
     if (path === "/v1/identity/verification-status" && httpMethod === "POST") {
       return withCorrelation(await setVerificationStatusByAuth0(event, tenantId));
+    }
+
+    if (path === "/v1/identity/anonymise" && httpMethod === "POST") {
+      return withCorrelation(await anonymiseActor(event, tenantId));
+    }
+
+    // Must precede the generic `/v1/identity/{id}` GET catch-all below.
+    if (path === "/v1/identity/by-user-profile" && httpMethod === "GET") {
+      return withCorrelation(await getActorByUserProfileId(event, tenantId));
     }
 
     if (path.startsWith("/v1/identity/") && httpMethod === "GET") {
@@ -799,6 +814,70 @@ async function setVerificationStatusByAuth0(event: APIGatewayProxyEvent, tenantI
     statusCode: 200,
     headers: corsHeaders,
     body: JSON.stringify({ id: upd.rows[0]?.id ?? null, previousStatus }),
+  };
+}
+
+/**
+ * GET /v1/identity/by-user-profile?userProfileId=
+ * Full actor-identity detail for an admin user view, keyed by user_profile_id.
+ * Returns { actor: ... | null } with the richer identity projection (locations,
+ * location, verified_at) the admin detail page needs. (Stream 3.4.)
+ */
+async function getActorByUserProfileId(event: APIGatewayProxyEvent, tenantId: string) {
+  const userProfileId = event.queryStringParameters?.userProfileId?.trim();
+  if (!userProfileId) {
+    return validationErrorResponse("userProfileId query parameter is required");
+  }
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, auth0_user_id, email, first_name, last_name, stage_name, bio,
+            profile_image_url, locations, location, verification_status,
+            is_founding_member, registry_id, verified_at, created_at
+       FROM actors
+      WHERE user_profile_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+      LIMIT 1`,
+    [userProfileId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ actor: result.rows[0] ?? null }),
+  };
+}
+
+/**
+ * POST /v1/identity/anonymise { auth0UserId }
+ * GDPR erasure of an actor's identity PII, keyed by Auth0 sub. Scrubs name/bio/
+ * image/locations while retaining the row for referential integrity. Applies
+ * even to soft-deleted rows (no deleted_at filter). Returns { updated }.
+ * (Stream 3.4 — Family 6.)
+ */
+async function anonymiseActor(event: APIGatewayProxyEvent, tenantId: string) {
+  const parsed = parseJsonBody(event, AnonymiseActorSchema);
+  if (!parsed.success) return parsed.response;
+  const { auth0UserId } = parsed.data;
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `UPDATE actors
+        SET first_name = NULL,
+            last_name = NULL,
+            stage_name = '[Deleted]',
+            bio = NULL,
+            profile_image_url = NULL,
+            locations = '[]'::jsonb,
+            updated_at = NOW()
+      WHERE auth0_user_id = $1 AND tenant_id = $2
+      RETURNING id`,
+    [auth0UserId, tenantId],
+  );
+
+  return {
+    statusCode: 200,
+    headers: corsHeaders,
+    body: JSON.stringify({ updated: result.rows.length }),
   };
 }
 

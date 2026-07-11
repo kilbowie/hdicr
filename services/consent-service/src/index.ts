@@ -120,6 +120,18 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       return { ...response, headers: responseHeaders };
     }
 
+    // NOTE: the explicit GET routes below MUST precede the generic
+    // `/v1/consent/` catch-all (which falls through to listConsents).
+    if (path === '/v1/consent/log' && httpMethod === 'GET') {
+      const response = await listConsentLog(event, tenantId);
+      return { ...response, headers: responseHeaders };
+    }
+
+    if (path === '/v1/consent/audit-log' && httpMethod === 'GET') {
+      const response = await listAuditLog(event, tenantId);
+      return { ...response, headers: responseHeaders };
+    }
+
     if (path.startsWith('/v1/consent/') && httpMethod === 'GET') {
       const response = await listConsents(event, tenantId);
       return { ...response, headers: responseHeaders };
@@ -276,4 +288,75 @@ async function getConsentLedgerCurrent(
     statusCode: 200,
     body: JSON.stringify({ current, history, licensesOnCurrentVersion: 0 }),
   };
+}
+
+/**
+ * GET /v1/consent/log?actorId=&limit=
+ * Immutable per-actor consent event log (append-only). Read-only compliance view.
+ */
+async function listConsentLog(event: APIGatewayProxyEvent, tenantId: string) {
+  const db = DatabaseClient.getInstance();
+  const actorId = event.queryStringParameters?.actorId?.trim();
+  if (!actorId) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'actorId query parameter is required' }) };
+  }
+
+  const rawLimit = parseInt(event.queryStringParameters?.limit ?? '50', 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 200) : 50;
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, action, consent_type, consent_scope, project_name, created_at
+     FROM consent_log
+     WHERE actor_id = $1::uuid AND tenant_id = $2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [actorId, tenantId, limit],
+  );
+
+  return { statusCode: 200, body: JSON.stringify({ entries: result.rows }) };
+}
+
+/**
+ * GET /v1/consent/audit-log?resourceType=&action=&limit=&offset=
+ * Platform audit trail (immutable). Optional resourceType (exact) + action
+ * (case-insensitive contains) filters, with pagination.
+ */
+async function listAuditLog(event: APIGatewayProxyEvent, tenantId: string) {
+  const db = DatabaseClient.getInstance();
+  const q = event.queryStringParameters ?? {};
+  const resourceType = q.resourceType?.trim();
+  const action = q.action?.trim();
+
+  const rawLimit = parseInt(q.limit ?? '50', 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 200) : 50;
+  const rawOffset = parseInt(q.offset ?? '0', 10);
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+
+  const conditions: string[] = ['tenant_id = $1'];
+  const params: unknown[] = [tenantId];
+  let idx = 2;
+  if (resourceType) {
+    conditions.push(`resource_type = $${idx++}`);
+    params.push(resourceType);
+  }
+  if (action) {
+    conditions.push(`action ILIKE $${idx++}`);
+    params.push(`%${action}%`);
+  }
+  const limitIdx = idx++;
+  const offsetIdx = idx++;
+  params.push(limit, offset);
+
+  const result = await db.queryWithTenant(
+    tenantId,
+    `SELECT id, user_type, action, resource_type, resource_id::text AS resource_id, created_at
+     FROM audit_log
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY created_at DESC
+     LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+    params,
+  );
+
+  return { statusCode: 200, body: JSON.stringify({ entries: result.rows }) };
 }
