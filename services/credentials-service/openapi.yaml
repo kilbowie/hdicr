@@ -1,0 +1,275 @@
+openapi: 3.1.0
+info:
+  title: HDICR Credentials Service API
+  version: 3.0.0
+  summary: Verifiable Credential records, bitstring status lists and revocation.
+  description: >-
+    Owns the verifiable_credentials / bitstring_status_lists /
+    credential_status_entries tables for HDICR. This 3.5a surface covers
+    record reads/writes, revocation and status lists (no signing).
+    Server-side issuance/signing (KMS) is added in 3.5b (POST /v1/credentials/issue).
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://hdicr.com
+    description: Production API
+tags:
+  - name: Credentials
+    description: Verifiable Credential records, revocation and status lists.
+security:
+  - bearerAuth: []
+paths:
+  /v1/credentials:
+    get:
+      tags: [Credentials]
+      operationId: listCredentialsByProfileId
+      summary: List a user's verifiable credentials
+      parameters:
+        - { in: query, name: userProfileId, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: includeRevoked, required: false, schema: { type: boolean } }
+        - { in: query, name: includeExpired, required: false, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Credential records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials: { type: array, items: { type: object } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/{id}:
+    get:
+      tags: [Credentials]
+      operationId: getCredentialById
+      summary: Get one credential by id
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Credential (or null)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential: { type: object, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/{id}/revoke:
+    post:
+      tags: [Credentials]
+      operationId: revokeCredentialById
+      summary: Revoke a credential and flip its bitstring status bit
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Revocation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+                    properties:
+                      found: { type: boolean }
+                      alreadyRevoked: { type: boolean }
+                      hasStatusEntry: { type: boolean }
+                      revokedAt: { type: string, nullable: true }
+                      ownerUserProfileId: { type: string, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/user-profile:
+    get:
+      tags: [Credentials]
+      operationId: getUserProfileByAuth0UserId
+      summary: Resolve a user profile by Auth0 sub (with drifted-sub self-heal)
+      parameters:
+        - { in: query, name: auth0UserId, required: true, schema: { type: string, minLength: 1 } }
+      responses:
+        '200':
+          description: Profile (or null)
+          content:
+            application/json:
+              schema: { type: object, properties: { profile: { type: object, nullable: true } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/issuance-profile:
+    get:
+      tags: [Credentials]
+      operationId: getIssuanceProfileByAuth0UserId
+      summary: Resolve the issuance profile (+ actor verification) by Auth0 sub
+      parameters:
+        - { in: query, name: auth0UserId, required: true, schema: { type: string, minLength: 1 } }
+      responses:
+        '200':
+          description: Issuance profile (or null)
+          content:
+            application/json:
+              schema: { type: object, properties: { profile: { type: object, nullable: true } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/identity-links:
+    get:
+      tags: [Credentials]
+      operationId: listActiveIdentityLinks
+      summary: List a profile's active identity links
+      parameters:
+        - { in: query, name: userProfileId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Active identity links
+          content:
+            application/json:
+              schema: { type: object, properties: { links: { type: array, items: { type: object } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/consent-status:
+    get:
+      tags: [Credentials]
+      operationId: getActorConsentStatus
+      summary: Whether an actor allows any media-usage licensing (public-visibility gate)
+      parameters:
+        - { in: query, name: userProfileId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Consent status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actorId: { type: string, nullable: true }
+                  allowsLicensing: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/by-license:
+    get:
+      tags: [Credentials]
+      operationId: getCredentialIdByLicense
+      summary: The active (non-revoked) credential id linked to a licence
+      parameters:
+        - { in: query, name: licenseId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Linked credential id (or null)
+          content:
+            application/json:
+              schema: { type: object, properties: { credentialId: { type: string, nullable: true } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/license/revoke:
+    post:
+      tags: [Credentials]
+      operationId: revokeLicenseCredentials
+      summary: Revoke every active credential tied to a licence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [licenseId]
+              properties:
+                licenseId: { type: string, format: uuid }
+                reason: { type: string }
+      responses:
+        '200':
+          description: Number revoked
+          content:
+            application/json:
+              schema: { type: object, properties: { revoked: { type: integer } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/status-list/{listId}:
+    get:
+      tags: [Credentials]
+      operationId: getStatusListById
+      summary: Get a BitstringStatusListCredential JSON-LD document by list id
+      parameters:
+        - { in: path, name: listId, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Status list credential (or null)
+          content:
+            application/json:
+              schema: { type: object, properties: { statusList: { type: object, nullable: true } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Auth0 RS256-signed JWT. GET requires scope hdicr:credentials:read;
+        POST requires hdicr:credentials:write. Scope enforcement is applied
+        after signature verification.
+  responses:
+    BadRequest:
+      description: Invalid request payload or query parameters
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Authenticated caller lacks required scope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+        detail: { type: string }
+        message: { type: string }
