@@ -1,4 +1,6 @@
 import { APIGatewayProxyHandler, APIGatewayProxyEvent } from 'aws-lambda';
+import { v4 as uuidv4 } from 'uuid';
+import { z } from 'zod';
 import { DatabaseClient } from '@trulyimagined/database';
 import {
   validateAuth0TokenWithStatus,
@@ -6,7 +8,19 @@ import {
   getOrCreateCorrelationId,
   withCorrelationHeaders,
 } from '@trulyimagined/middleware';
-import { decodeBitstring, setBit, encodeBitstring } from './bitstring';
+import { decodeBitstring, setBit, encodeBitstring, generateBitstring } from './bitstring';
+import {
+  ISSUER_DID,
+  SIGNING_VERIFICATION_METHOD,
+  CRYPTOSUITE,
+  buildUnsignedCredential,
+  newCredentialId,
+  signCredential,
+  makeKmsSigner,
+  getKmsPublicJwk,
+} from './vc-signer';
+
+const STATUS_LIST_BASE_URL = 'https://trulyimagined.com/api/credentials/status';
 
 /**
  * Credentials Service - Lambda Handler (Stream 3.5a)
@@ -85,9 +99,16 @@ export const handler: APIGatewayProxyHandler = async (event) => {
           return wrap(await getActorConsentStatus(event, tenantId));
         case 'by-license':
           return wrap(await getCredentialIdByLicense(event, tenantId));
+        case 'issuer-key':
+          return wrap(await getIssuerKey());
         default:
           return wrap(await getCredentialById(rest[0], tenantId));
       }
+    }
+
+    // POST /v1/credentials/issue  → server-side KMS-signed issuance
+    if (httpMethod === 'POST' && rest.length === 1 && rest[0] === 'issue') {
+      return wrap(await issueCredential(event, tenantId));
     }
 
     // GET /v1/credentials  → list by user profile
@@ -451,4 +472,221 @@ async function revokeLicenseCredentials(event: APIGatewayProxyEvent, tenantId: s
     [licenseId, reason],
   );
   return { statusCode: 200, body: JSON.stringify({ revoked: res.rows.length }) };
+}
+
+// ---- Server-side issuance (KMS-signed, Stream 3.5b) ----
+
+const IssueSchema = z.object({
+  userProfileId: z.string().uuid(),
+  credentialType: z.string().min(1),
+  holderDid: z.string().min(1),
+  claims: z.record(z.unknown()).default({}),
+  expiresAt: z.string().optional(),
+  expiresInDays: z.number().int().positive().optional(),
+  licenseId: z.string().uuid().optional(),
+});
+
+/**
+ * POST /v1/credentials/issue — full server-side issuance: (license idempotency →)
+ * insert record → allocate revocation status → KMS-sign (ecdsa-jcs-2019) → finalize.
+ * Returns { issued, credentialDbId, credential }. The private key never leaves KMS.
+ */
+async function issueCredential(event: APIGatewayProxyEvent, tenantId: string) {
+  const parsed = IssueSchema.safeParse(parseBody(event));
+  if (!parsed.success) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Validation failed', detail: parsed.error.flatten() }) };
+  }
+  const { userProfileId, credentialType, holderDid, claims, expiresAt, expiresInDays, licenseId } =
+    parsed.data;
+
+  const keyId = process.env.VC_SIGNING_KMS_KEY_ID;
+  if (!keyId) {
+    return { statusCode: 500, body: JSON.stringify({ error: 'VC_SIGNING_KMS_KEY_ID is not configured' }) };
+  }
+
+  // Idempotency: one active credential per licence (also enforced by a unique
+  // partial index from migration 098).
+  if (licenseId) {
+    const existing = (
+      await db.queryWithTenant(
+        tenantId,
+        `SELECT id, credential_json FROM verifiable_credentials
+         WHERE license_id = $1 AND is_revoked = false LIMIT 1`,
+        [licenseId],
+      )
+    ).rows[0] as { id: string; credential_json: unknown } | undefined;
+    if (existing) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ issued: false, credentialDbId: existing.id, credential: existing.credential_json }),
+      };
+    }
+  }
+
+  // 1. Placeholder record.
+  const insert = licenseId
+    ? await db.queryWithTenant(
+        tenantId,
+        `INSERT INTO verifiable_credentials
+           (user_profile_id, credential_type, credential_json, issuer_did, holder_did, license_id, tenant_id)
+         VALUES ($1, $2, '{}'::jsonb, $3, $4, $5, $6) RETURNING id`,
+        [userProfileId, credentialType, ISSUER_DID, holderDid, licenseId, tenantId],
+      )
+    : await db.queryWithTenant(
+        tenantId,
+        `INSERT INTO verifiable_credentials
+           (user_profile_id, credential_type, credential_json, issuer_did, holder_did, tenant_id)
+         VALUES ($1, $2, '{}'::jsonb, $3, $4, $5) RETURNING id`,
+        [userProfileId, credentialType, ISSUER_DID, holderDid, tenantId],
+      );
+  const credentialDbId = (insert.rows[0] as { id?: string })?.id;
+  if (!credentialDbId) {
+    return { statusCode: 500, body: JSON.stringify({ error: 'Failed to create credential record' }) };
+  }
+
+  // 2. Allocate a revocation status list entry.
+  const credentialStatus = await allocateRevocationStatus(credentialDbId, tenantId);
+
+  // 3. Build the unsigned VC.
+  const validFrom = new Date().toISOString();
+  let validUntil: string | undefined;
+  if (expiresAt) {
+    validUntil = new Date(expiresAt).toISOString();
+  } else if (expiresInDays) {
+    const d = new Date();
+    d.setDate(d.getDate() + expiresInDays);
+    validUntil = d.toISOString();
+  }
+
+  const unsigned = buildUnsignedCredential({
+    credentialId: newCredentialId(uuidv4()),
+    credentialType,
+    holderDid,
+    holderProfileId: userProfileId,
+    claims,
+    validFrom,
+    validUntil,
+    credentialStatus,
+  });
+
+  // 4. Sign via KMS (private key never leaves KMS).
+  const credential = await signCredential(unsigned, {
+    created: new Date().toISOString(),
+    sign: makeKmsSigner(keyId),
+  });
+
+  // 5. Persist the signed credential.
+  await db.queryWithTenant(
+    tenantId,
+    `UPDATE verifiable_credentials
+     SET credential_json = $1::jsonb,
+         credential_id = $2,
+         expires_at = $3::timestamptz,
+         verification_method = $4,
+         proof_type = $5,
+         updated_at = NOW()
+     WHERE id = $6::uuid`,
+    [JSON.stringify(credential), credential.id, validUntil ?? null, SIGNING_VERIFICATION_METHOD, CRYPTOSUITE, credentialDbId],
+  );
+
+  return { statusCode: 201, body: JSON.stringify({ issued: true, credentialDbId, credential }) };
+}
+
+/**
+ * Allocate the next revocation-status-list index for a credential, creating a
+ * fresh (empty) status list when none has room. Ported from the TI client;
+ * every INSERT sets tenant_id so RLS WITH CHECK passes for any tenant.
+ */
+async function allocateRevocationStatus(credentialId: string, tenantId: string) {
+  type StatusListRow = { id: string; list_id: string; current_index: number; max_index: number };
+  let statusList = (
+    await db.queryWithTenant(
+      tenantId,
+      `SELECT id, list_id, current_index, max_index
+       FROM bitstring_status_lists
+       WHERE status_purpose = 'revocation' AND is_full = false LIMIT 1`,
+      [],
+    )
+  ).rows[0] as StatusListRow | undefined;
+
+  if (!statusList) {
+    const listId = `revocation-${uuidv4()}`;
+    const encodedList = await encodeBitstring(generateBitstring());
+    const credJson = {
+      '@context': [
+        'https://www.w3.org/ns/credentials/v2',
+        'https://www.w3.org/ns/credentials/status/v1',
+      ],
+      id: `${STATUS_LIST_BASE_URL}/${listId}`,
+      type: ['VerifiableCredential', 'BitstringStatusListCredential'],
+      issuer: ISSUER_DID,
+      validFrom: new Date().toISOString(),
+      credentialSubject: {
+        id: `${STATUS_LIST_BASE_URL}/${listId}#list`,
+        type: 'BitstringStatusList',
+        statusPurpose: 'revocation',
+        encodedList,
+      },
+    };
+    const inserted = await db.queryWithTenant(
+      tenantId,
+      `INSERT INTO bitstring_status_lists
+         (list_id, status_purpose, encoded_list, bitstring_size, current_index, max_index, credential_json, tenant_id)
+       VALUES ($1, 'revocation', $2, 131072, 0, 131071, $3::jsonb, $4)
+       RETURNING id, list_id, current_index, max_index`,
+      [listId, encodedList, JSON.stringify(credJson), tenantId],
+    );
+    statusList = inserted.rows[0] as StatusListRow | undefined;
+    if (!statusList) throw new Error('[CREDENTIALS] Failed to create bitstring status list');
+  }
+
+  const claimed = (
+    await db.queryWithTenant(
+      tenantId,
+      `UPDATE bitstring_status_lists
+       SET current_index = current_index + 1,
+           is_full = (current_index + 1 >= max_index)
+       WHERE id = $1 AND is_full = false
+       RETURNING current_index - 1 AS claimed_index, list_id`,
+      [statusList.id],
+    )
+  ).rows[0] as { claimed_index: number; list_id: string } | undefined;
+  if (!claimed) throw new Error('[CREDENTIALS] Failed to claim a revocation status list index');
+
+  const entryUrl = `${STATUS_LIST_BASE_URL}/${claimed.list_id}#${claimed.claimed_index}`;
+  await db.queryWithTenant(
+    tenantId,
+    `INSERT INTO credential_status_entries
+       (credential_id, status_list_id, status_list_index, status_purpose, entry_url, tenant_id)
+     VALUES ($1::uuid, $2::uuid, $3, 'revocation', $4, $5)`,
+    [credentialId, statusList.id, claimed.claimed_index, entryUrl, tenantId],
+  );
+
+  return {
+    id: entryUrl,
+    type: 'BitstringStatusListEntry',
+    statusPurpose: 'revocation',
+    statusListIndex: String(claimed.claimed_index),
+    statusListCredential: `${STATUS_LIST_BASE_URL}/${claimed.list_id}`,
+  };
+}
+
+/**
+ * GET /v1/credentials/issuer-key — the KMS public key as a JWK, for TI's DID
+ * document (#key-2) and the new-suite verify path. Non-secret.
+ */
+async function getIssuerKey() {
+  const keyId = process.env.VC_SIGNING_KMS_KEY_ID;
+  if (!keyId) {
+    return { statusCode: 500, body: JSON.stringify({ error: 'VC_SIGNING_KMS_KEY_ID is not configured' }) };
+  }
+  const publicKeyJwk = await getKmsPublicJwk(keyId);
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      verificationMethod: SIGNING_VERIFICATION_METHOD,
+      cryptosuite: CRYPTOSUITE,
+      publicKeyJwk,
+    }),
+  };
 }

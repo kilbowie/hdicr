@@ -218,6 +218,77 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
+  /v1/credentials/issue:
+    post:
+      tags: [Credentials]
+      operationId: issueCredential
+      summary: Issue a KMS-signed Verifiable Credential (ecdsa-jcs-2019, server-side)
+      description: >-
+        Full server-side issuance: (licence idempotency →) insert record →
+        allocate revocation status → KMS-sign (ECDSA P-256, ecdsa-jcs-2019 Data
+        Integrity proof, verificationMethod did:web:trulyimagined.com#key-2) →
+        finalize. The private key never leaves AWS KMS.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userProfileId, credentialType, holderDid]
+              properties:
+                userProfileId: { type: string, format: uuid }
+                credentialType: { type: string }
+                holderDid: { type: string }
+                claims: { type: object, additionalProperties: true }
+                expiresAt: { type: string }
+                expiresInDays: { type: integer, minimum: 1 }
+                licenseId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Newly issued (signed) credential
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issued: { type: boolean }
+                  credentialDbId: { type: string }
+                  credential: { type: object }
+        '200':
+          description: Idempotent hit — an active credential already exists for the licence
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issued: { type: boolean }
+                  credentialDbId: { type: string }
+                  credential: { type: object }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /v1/credentials/issuer-key:
+    get:
+      tags: [Credentials]
+      operationId: getIssuerKey
+      summary: The VC signing KMS public key as a JWK (for DID #key-2 + verify)
+      responses:
+        '200':
+          description: Issuer public key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verificationMethod: { type: string }
+                  cryptosuite: { type: string }
+                  publicKeyJwk: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
   /v1/credentials/status-list/{listId}:
     get:
       tags: [Credentials]
