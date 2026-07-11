@@ -37,6 +37,10 @@ const services = [
     name: "representation-service",
     entry: "services/representation-service/src/index.ts",
   },
+  {
+    name: "credentials-service",
+    entry: "services/credentials-service/src/index.ts",
+  },
 ];
 
 async function bundleAll() {

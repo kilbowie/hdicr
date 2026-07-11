@@ -31,6 +31,11 @@ const services = [
     entry: 'services/representation-service/src/index.ts',
     outfile: 'services/representation-service/dist/index.js',
   },
+  {
+    name: 'credentials-service',
+    entry: 'services/credentials-service/src/index.ts',
+    outfile: 'services/credentials-service/dist/index.js',
+  },
 ];
 
 const sharedConfig = {

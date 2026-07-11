@@ -187,6 +187,23 @@ Resources:
             Path: /v1/consent-ledger/{proxy+}
             Method: ANY
 
+  CredentialsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub hdicr-credentials-${Environment}
+      CodeUri: ../services/credentials-service/dist
+      Handler: index.handler
+      Environment:
+        Variables:
+          DATABASE_URL: !Ref HDICRDatabaseURL
+      Events:
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /v1/credentials/{proxy+}
+            Method: ANY
+
   LicensingFunction:
     Type: AWS::Serverless::Function
     Properties:
