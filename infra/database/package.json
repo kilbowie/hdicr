@@ -15,6 +15,7 @@
     "migrate:prod": "node dist/migrate.js"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.515.0",
     "@trulyimagined/types": "workspace:*",
     "pg": "^8.11.3"
   },

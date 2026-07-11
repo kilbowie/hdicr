@@ -13,12 +13,17 @@ Globals:
         AUTH0_DOMAIN: !Ref Auth0Domain
         AUTH0_AUDIENCE: !Ref Auth0Audience
         AUTH0_CLIENT_ID: !Ref AUTH0ClientId
-        AUTH0_CLIENT_SECRET: !Ref AUTH0ClientSecret
-        JWT_SIGNING_KEY: !Ref JwtSigningKey
         HDICR_DEFAULT_TENANT_ID: !Ref HDICRDefaultTenantId
         AUTH0_ROLES_CLAIM_NAMESPACE: !Ref Auth0RolesClaimNamespace
         AUTH0_TENANT_ID_CLAIM_NAMESPACE: !Ref Auth0TenantIdClaimNamespace
         DB_POOL_SIZE: !Ref DBPoolSize
+        # The DB connection string (which contains the password) is read from
+        # Secrets Manager at runtime via each function's execution role — never
+        # baked into a plaintext Lambda env var. Resolved by infra/database
+        # DatabaseClient. AUTH0_CLIENT_SECRET / JWT_SIGNING_KEY were previously
+        # set here but are not read by the request path (auth uses Auth0 JWKS),
+        # so they have been removed rather than migrated.
+        DB_URL_SECRET_ARN: !Ref DbUrlSecretArn
 
 Parameters:
   Environment:
@@ -29,9 +34,13 @@ Parameters:
       - staging
       - production
 
-  HDICRDatabaseURL:
+  DbUrlSecretArn:
     Type: String
-    NoEcho: true
+    Default: arn:aws:secretsmanager:eu-west-1:440779547223:secret:/hdicr/prod/db/url-h6XyzY
+    Description: >-
+      ARN of the Secrets Manager secret holding the Postgres connection string.
+      Passed to the functions as DB_URL_SECRET_ARN and read at runtime; this is a
+      resource identifier, not a secret value, so it is safe as a plain env var.
 
   Auth0Domain:
     Type: String
@@ -109,14 +118,6 @@ Parameters:
     Type: String
     NoEcho: true
 
-  AUTH0ClientSecret:
-    Type: String
-    NoEcho: true
-
-  JwtSigningKey:
-    Type: String
-    NoEcho: true
-
 Conditions:
   ShouldManageHdicrComDomain: !Equals [!Ref ManageHdicrComDomain, "true"]
   ShouldCreateCustomDomain: !Equals [!Ref ManageCustomDomainResources, "true"]
@@ -148,8 +149,12 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          DATABASE_URL: !Ref HDICRDatabaseURL
           S3_BUCKET_NAME: !Ref S3BucketName
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbUrlSecretArn
       Events:
         Proxy:
           Type: Api
@@ -170,9 +175,11 @@ Resources:
       FunctionName: !Sub hdicr-consent-${Environment}
       CodeUri: ../services/consent-service/dist
       Handler: index.handler
-      Environment:
-        Variables:
-          DATABASE_URL: !Ref HDICRDatabaseURL
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbUrlSecretArn
       Events:
         Proxy:
           Type: Api
@@ -187,6 +194,32 @@ Resources:
             Path: /v1/consent-ledger/{proxy+}
             Method: ANY
 
+  # Non-extractable ECDSA P-256 key that signs Verifiable Credentials server-side
+  # (Stream 3.5b). AWS KMS cannot sign Ed25519, so new credentials use an ECDSA
+  # Data Integrity proof (ecdsa-jcs-2019); the legacy Ed25519 public key stays in
+  # the issuer DID doc as #key-1 to verify older credentials.
+  VcSigningKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub HDICR Verifiable Credential issuer signing key (${Environment})
+      KeySpec: ECC_NIST_P256
+      KeyUsage: SIGN_VERIFY
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableRootAccountAdmin
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+
+  VcSigningKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/hdicr-vc-signing-${Environment}
+      TargetKeyId: !Ref VcSigningKey
+
   CredentialsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -195,7 +228,17 @@ Resources:
       Handler: index.handler
       Environment:
         Variables:
-          DATABASE_URL: !Ref HDICRDatabaseURL
+          VC_SIGNING_KMS_KEY_ID: !Ref VcSigningKey
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbUrlSecretArn
+            - Effect: Allow
+              Action:
+                - kms:Sign
+                - kms:GetPublicKey
+              Resource: !GetAtt VcSigningKey.Arn
       Events:
         Proxy:
           Type: Api
@@ -210,9 +253,11 @@ Resources:
       FunctionName: !Sub hdicr-licensing-${Environment}
       CodeUri: ../services/licensing-service/dist
       Handler: index.handler
-      Environment:
-        Variables:
-          DATABASE_URL: !Ref HDICRDatabaseURL
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbUrlSecretArn
       Events:
         Proxy:
           Type: Api
@@ -233,9 +278,11 @@ Resources:
       FunctionName: !Sub hdicr-representation-${Environment}
       CodeUri: ../services/representation-service/dist
       Handler: index.handler
-      Environment:
-        Variables:
-          DATABASE_URL: !Ref HDICRDatabaseURL
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref DbUrlSecretArn
       Events:
         Proxy:
           Type: Api
