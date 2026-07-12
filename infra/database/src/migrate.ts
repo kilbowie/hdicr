@@ -58,6 +58,7 @@ const HDICR_MIGRATION_ORDER = [
   '124_hdicr_actor_generation_ready.sql',
   '126_hdicr_platform_default_actor.sql',
   '127_hdicr_actor_self_generation.sql',
+  '128_hdicr_drop_representation_tables.sql',
 ];
 
 const TI_MIGRATION_ORDER = [
