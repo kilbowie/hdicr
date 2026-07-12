@@ -34,10 +34,6 @@ const services = [
     entry: "services/licensing-service/src/index.ts",
   },
   {
-    name: "representation-service",
-    entry: "services/representation-service/src/index.ts",
-  },
-  {
     name: "credentials-service",
     entry: "services/credentials-service/src/index.ts",
   },

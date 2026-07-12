@@ -272,24 +272,9 @@ Resources:
             Path: /v1/licensing/{proxy+}
             Method: ANY
 
-  RepresentationFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub hdicr-representation-${Environment}
-      CodeUri: ../services/representation-service/dist
-      Handler: index.handler
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Ref DbUrlSecretArn
-      Events:
-        Proxy:
-          Type: Api
-          Properties:
-            RestApiId: !Ref HDICRApi
-            Path: /v1/representation/{proxy+}
-            Method: ANY
+  # RepresentationFunction retired (Stream 4b): representation is a Truly-Imagined
+  # vertical concern, served from the TI database, not the general HDICR registry.
+  # See the trulyimagined repo `lib/hdicr/representation-client.ts` (now TI-local).
 
   HDICRCustomDomain:
     Type: AWS::ApiGateway::DomainName
