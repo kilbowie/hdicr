@@ -242,55 +242,6 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@20.19.37)(vite@8.0.3)
 
-  services/representation-service:
-    dependencies:
-      '@aws-sdk/client-lambda':
-        specifier: ^3.496.0
-        version: 3.1014.0
-      '@trulyimagined/database':
-        specifier: workspace:*
-        version: link:../../infra/database
-      '@trulyimagined/middleware':
-        specifier: workspace:*
-        version: link:../../shared/middleware
-      '@trulyimagined/types':
-        specifier: workspace:*
-        version: link:../../shared/types
-      '@trulyimagined/utils':
-        specifier: workspace:*
-        version: link:../../shared/utils
-      aws-lambda:
-        specifier: ^1.0.7
-        version: 1.0.7
-      pg:
-        specifier: ^8.11.3
-        version: 8.20.0
-      uuid:
-        specifier: ^9.0.1
-        version: 9.0.1
-      zod:
-        specifier: ^3.22.4
-        version: 3.25.76
-    devDependencies:
-      '@types/aws-lambda':
-        specifier: ^8.10.132
-        version: 8.10.161
-      '@types/node':
-        specifier: ^20.19.0
-        version: 20.19.37
-      '@types/pg':
-        specifier: ^8.11.0
-        version: 8.20.0
-      '@types/uuid':
-        specifier: ^9.0.8
-        version: 9.0.8
-      typescript:
-        specifier: ^5.8.0
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.2
-        version: 4.1.2(@types/node@20.19.37)(vite@8.0.3)
-
   shared/middleware:
     dependencies:
       '@trulyimagined/types':

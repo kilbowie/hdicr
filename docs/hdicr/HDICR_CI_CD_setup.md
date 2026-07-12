@@ -41,5 +41,15 @@ Settings → Environments → `production` → add **Required reviewers** (yours
 ### 5. Marketplace-actions policy
 The workflows use `actions/checkout`, `actions/setup-node`, and `aws-actions/configure-aws-credentials`. If the org restricts Actions to `local_only`, allow these (Settings → Actions → General → "Allow specified actions": add `actions/*` and `aws-actions/*`).
 
-## Deploy-coordination note (representation scope enforcement)
-`representation-service` now enforces `hdicr:representation:read|write`. **Before** the first `main` deploy that includes this change, grant those scopes to the TI M2M application in Auth0 (on the `https://hdicr.com` API — and the legacy `https://hdicr.trulyimagined.com` API while both are live). If deployed first, TI's representation calls will 403. The `production` environment approval gate (step 4) is the control point for this.
+## Deploy-coordination note (representation service retired — Stream 4b)
+The `representation-service` Lambda has been **retired**: representation is a
+Truly-Imagined vertical concern, served from the TI database, not part of the
+general HDICR Human-ID & consent registry. TI's `lib/hdicr/representation-client.ts`
+is now TI-local and no longer calls `/v1/representation/*`.
+
+**Ordering:** deploy this change (which removes the `/v1/representation/{proxy+}`
+route) **only after** the TI change that stops calling it is live in production
+(trulyimagined PR #32). Deploying first would 404 any lingering TI representation
+call. The `production` environment approval gate (step 4) is the control point.
+The `hdicr:representation:read|write` Auth0 scopes are now unused and can be left
+in place or removed later.
