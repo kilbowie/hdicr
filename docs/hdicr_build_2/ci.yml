@@ -1,0 +1,23 @@
+name: conformance
+
+on: [push, pull_request]
+
+jobs:
+  killswitch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+      # The conformance test. If this goes red, the kill switch does not work,
+      # and nothing else in this repository is worth anything.
+      - run: pnpm test
+
+      # End-to-end over real HTTP and real SSE. Prints measured propagation latency.
+      - run: pnpm demo
