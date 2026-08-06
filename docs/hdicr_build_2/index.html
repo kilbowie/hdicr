@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Consent Wallet</title>
+<style>
+  :root { --ink:#0C2340; --gold:#D4AF37; --line:#e5e5e5; }
+  * { box-sizing:border-box }
+  body { font:16px/1.5 system-ui,-apple-system,sans-serif; color:var(--ink);
+         max-width:640px; margin:48px auto; padding:0 24px; }
+  h1 { font-size:22px; letter-spacing:-.01em; margin:0 0 4px }
+  .sub { color:#777; font-size:14px; margin:0 0 32px }
+  .card { border:1px solid var(--line); border-radius:12px; padding:24px; margin-bottom:20px }
+  .row { display:flex; justify-content:space-between; padding:8px 0;
+         border-bottom:1px solid #f4f4f4; font-size:14px }
+  .row:last-child { border:0 }
+  .k { color:#777 }
+  .v { font-weight:600 }
+  button { width:100%; padding:16px; font:600 16px system-ui; border:0; border-radius:10px;
+           cursor:pointer; margin-top:8px }
+  .revoke { background:#C1272D; color:#fff }
+  .revoke:hover { background:#a01f24 }
+  .ghost { background:#fff; color:var(--ink); border:1px solid var(--line) }
+  #out { font:13px/1.6 ui-monospace,monospace; background:#0C2340; color:#9fe8c8;
+         padding:16px; border-radius:10px; white-space:pre-wrap; min-height:80px }
+  .lat { font-size:32px; font-weight:700; color:var(--gold) }
+</style>
+
+<h1>Consent Wallet</h1>
+<p class="sub">You control what the agent may do — and you can stop it.</p>
+
+<div class="card">
+  <div class="row"><span class="k">Granted to</span><span class="v">Truly Imagined · render agent</span></div>
+  <div class="row"><span class="k">What</span><span class="v">Your face and voice</span></div>
+  <div class="row"><span class="k">Where</span><span class="v">UK and EU only</span></div>
+  <div class="row"><span class="k">Never</span><span class="v">Political · adult · endorsement</span></div>
+  <div class="row"><span class="k">Limit</span><span class="v">500 renders / month</span></div>
+  <div class="row"><span class="k">Expires</span><span class="v">in 90 days</span></div>
+  <button class="ghost" onclick="go('/render')">Start a render</button>
+  <button class="ghost" onclick="go('/render-political')">Try a political render</button>
+  <button class="revoke" onclick="go('/revoke')">REVOKE — stop everything, now</button>
+</div>
+
+<div id="out">Grant is live. Renders are running.</div>
+
+<script>
+  const out = document.getElementById('out');
+  async function go(path) {
+    out.textContent = '…';
+    const r = await fetch(path, { method: 'POST' });
+    const d = await r.json();
+    if (d.propagationMs !== undefined) {
+      out.innerHTML =
+        `<span class="lat">${d.propagationMs}ms</span>\n` +
+        `every verifier now refuses\n` +
+        `gates notified: ${d.gatesNotified}\n` +
+        `renders halted: ${d.halted.join(', ') || 'none in flight'}`;
+    } else {
+      out.textContent = JSON.stringify(d, null, 2);
+    }
+  }
+</script>
