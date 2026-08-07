@@ -256,7 +256,7 @@ Resources:
       Description: >-
         The ONLY principal permitted to sign with the H2A issuer key. Assumed by the
         H2A sign/revoke functions (S2.H2, S2.H3). Signing permission is granted by the
-        KEY POLICY, not by an IAM policy here — so the key names who may use it, and
+        KEY POLICY, not by an IAM policy here - so the key names who may use it, and
         adding an IAM policy elsewhere cannot widen that set.
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -271,7 +271,7 @@ Resources:
   H2aIssuerKey:
     Type: AWS::KMS::Key
     Properties:
-      Description: !Sub H2A issuer signing key — grants and status lists (${Environment})
+      Description: !Sub H2A issuer signing key - grants and status lists (${Environment})
       KeySpec: ECC_NIST_P256
       KeyUsage: SIGN_VERIFY
       KeyPolicy:
@@ -452,12 +452,12 @@ Outputs:
     Description: KMS key ARN of the H2A issuer signing key.
     Value: !GetAtt H2aIssuerKey.Arn
   H2aIssuerKeyAliasName:
-    Description: Stable alias — use this, not the key id, so rotation does not change callers.
+    Description: Stable alias - use this, not the key id, so rotation does not change callers.
     Value: !Sub alias/h2a-issuer-${Environment}
   H2aIssuerSigningRoleArn:
     Description: >-
-      The ONLY principal permitted to sign with the H2A issuer key. Every other principal —
-      including Truly Imagined's Vercel role and Bridle's — is denied kms:Sign by the key
+      The ONLY principal permitted to sign with the H2A issuer key. Every other principal -
+      including Truly Imagined's Vercel role and Bridle's - is denied kms:Sign by the key
       policy itself, which an IAM Allow cannot override.
     Value: !GetAtt H2aIssuerSigningRole.Arn
   CustomDomain:
