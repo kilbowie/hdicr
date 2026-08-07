@@ -1,0 +1,24 @@
+# The ADR-014 interop vectors are NORMATIVE test data (ADR-014 §4). They are compared
+# byte-for-byte against h2a-protocol and bridle by scripts/check-vectors-pinned.mjs, and pinned
+# by a committed SHA-256 — so their bytes must not depend on who checked them out.
+#
+# This file exists because that check failed on its first run. hdicr had no .gitattributes, so a
+# Windows checkout with core.autocrlf converted 124 line endings and the fixture became 9497 bytes
+# instead of 9373. The CONTENT was identical — strip the CRs and the digest matched exactly — but
+# the bytes were not, and "byte-identical across three repositories" was therefore false on
+# Windows while CI, which runs on Linux, stayed green. A check whose result depends on the
+# platform it runs on tests the machine, not the repository. That is the same defect class as the
+# missing `pnpm build` step this workflow gained on 2026-08-07.
+#
+# `-text` disables conversion outright rather than normalising, so these bytes are stable by
+# construction rather than by configuration — a stray `git config core.autocrlf` on one
+# contributor's machine cannot reintroduce it. Mirrors h2a-protocol's protection of the same
+# files upstream.
+services/credentials-service/test/fixtures/**   -text
+
+# The pin script itself, for the same reason and it is easy to miss. Its stated design property is
+# that it is BYTE-IDENTICAL in h2a-protocol, bridle and hdicr — "the file differing between
+# repositories is itself the signal". A CRLF checkout here makes that claim false on Windows while
+# leaving it true on Linux, which is precisely the kind of quietly-platform-dependent truth this
+# script exists to eliminate. Git warned about this while the fixture fix was being staged.
+scripts/check-vectors-pinned.mjs                -text
