@@ -32,6 +32,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # MUST run before type-check. The shared packages are TypeScript composite projects, so
+      # shared/utils type-checks through a project reference to shared/types and needs
+      # shared/types/dist/index.d.ts to exist. On a clean checkout it does not, and tsc fails with
+      # TS6305 "Output file has not been built from source file".
+      #
+      # This is why `ci.yml` had never passed on a pull request — including a docs-only one. It
+      # passed on every developer machine, where a previous build had left dist/ and .tsbuildinfo
+      # lying around, and failed on every clean checkout. Deploy (production) runs on main pushes
+      # and builds first, so it stayed green: the gate meant to protect the deployment was red
+      # while the deployment itself was green.
+      #
+      # Same defect class as Bridle's, fixed there on 2026-08-05: a check that silently depends on
+      # build output tests the machine it runs on, not the repository.
+      - name: Build (shared packages must exist before anything type-checks them)
+        run: pnpm build
+
       - name: Type-check
         run: pnpm type-check
 
