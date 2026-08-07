@@ -51,6 +51,19 @@ jobs:
       - name: Type-check
         run: pnpm type-check
 
+      # S1.X1 — MUST run before the tests, not after. test/adr014-vectors.test.ts asserts that this
+      # service's canonicaliser reproduces the ADR-014 vectors, reading them from a fixture vendored
+      # into this repository. If that fixture is wrong, the test validates hdicr against a wrong
+      # fixture and passes. Proving the fixture is the normative one is a precondition for the test
+      # meaning anything, not a separate concern.
+      #
+      # This closes B4. Every implementation in the estate already ran against "the vectors", but
+      # each read its own copy and nothing compared the copies — so the four canonicalisers could
+      # drift apart again with every suite green, which is exactly how the split went unnoticed the
+      # first time. The check found a real divergence here on its first run: see .gitattributes.
+      - name: ADR-014 vector pin — this fixture is the normative one (gate)
+        run: node scripts/check-vectors-pinned.mjs services/credentials-service/test/fixtures/h2a-vectors.json
+
       - name: Test
         run: pnpm test
 
