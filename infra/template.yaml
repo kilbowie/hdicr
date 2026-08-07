@@ -220,6 +220,117 @@ Resources:
       AliasName: !Sub alias/hdicr-vc-signing-${Environment}
       TargetKeyId: !Ref VcSigningKey
 
+  # ---------------------------------------------------------------------------
+  # H2A ISSUER SIGNING KEY (S1.H2)
+  #
+  # This key signs H2A grants and status lists. It is the thing the whole programme
+  # is arranged around: the claim is that Truly Imagined (the operator) and Bridle
+  # (the verifier) cannot revoke or issue, because neither can reach this key.
+  #
+  # DISTINCT FROM VcSigningKey ABOVE, deliberately. That key is the credentials
+  # issuer (#key-2) and signs Verifiable Credentials. Reusing it would mean one
+  # compromise ends both the credential and the authority story, and would make
+  # "who signed this" unanswerable — the separation is the point, not tidiness.
+  #
+  # WHY THE EXPLICIT DENY. VcSigningKey's policy grants only root kms:*, and access
+  # comes from IAM policies on each function's role. That is the ordinary pattern
+  # and it is not sufficient here: with it, ANY principal in the account holding
+  # sufficient IAM permission can sign, so "TI cannot sign" would be a statement
+  # about what we have not granted rather than about what is forbidden. An IAM
+  # Allow cannot override a key-policy Deny, so the Deny below converts an absence
+  # into a policy — which is what AUTHORITY-SPLIT-PROOF.md (S2.H4) must demonstrate.
+  #
+  # The Deny is written as an ALLOWLIST BY EXCLUSION rather than by naming TI's and
+  # Bridle's principals. Naming them would be a denylist, and a denylist silently
+  # stops covering anything created after it was written — including a future
+  # operator, which is the entire premise of a neutral issuer.
+  #
+  # Note that root retains key ADMINISTRATION but is denied kms:Sign. That is
+  # intended: even the account root should not mint issuance signatures outside the
+  # service role. Root is not denied kms:* because a key no principal can administer
+  # is unrecoverable.
+  H2aIssuerSigningRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub hdicr-h2a-issuer-signing-${Environment}
+      Description: >-
+        The ONLY principal permitted to sign with the H2A issuer key. Assumed by the
+        H2A sign/revoke functions (S2.H2, S2.H3). Signing permission is granted by the
+        KEY POLICY, not by an IAM policy here - so the key names who may use it, and
+        adding an IAM policy elsewhere cannot widen that set.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  H2aIssuerKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub H2A issuer signing key - grants and status lists (${Environment})
+      KeySpec: ECC_NIST_P256
+      KeyUsage: SIGN_VERIFY
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          # Administration only. kms:Sign is removed from root by the Deny below.
+          - Sid: EnableRootAccountAdmin
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+
+          # The single permitted signer.
+          - Sid: AllowH2aIssuerRoleToSign
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt H2aIssuerSigningRole.Arn
+            Action:
+              - kms:Sign
+              - kms:GetPublicKey
+              - kms:DescribeKey
+            Resource: "*"
+
+          # Anyone MAY read the public key — verification is a public act and a
+          # verifier that cannot fetch the key cannot check anything.
+          - Sid: AllowAccountToVerifyAndReadPublicKey
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - kms:Verify
+              - kms:GetPublicKey
+              - kms:DescribeKey
+            Resource: "*"
+
+          # THE AUTHORITY SPLIT. Everything that is not the issuer role is denied
+          # signing, whatever its IAM policy says. This is the statement
+          # AUTHORITY-SPLIT-PROOF.md tests with a real role assumption (G9).
+          - Sid: DenySigningToEveryPrincipalExceptTheIssuerRole
+            Effect: Deny
+            Principal: "*"
+            Action: kms:Sign
+            Resource: "*"
+            Condition:
+              ArnNotLike:
+                # Both forms: the role itself, and the assumed-role session ARN a
+                # Lambda actually presents at runtime. Matching only the role ARN
+                # would deny the issuer function its own key.
+                aws:PrincipalArn:
+                  - !GetAtt H2aIssuerSigningRole.Arn
+                  - !Sub arn:aws:sts::${AWS::AccountId}:assumed-role/hdicr-h2a-issuer-signing-${Environment}/*
+
+  H2aIssuerKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/h2a-issuer-${Environment}
+      TargetKeyId: !Ref H2aIssuerKey
+
   CredentialsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -330,6 +441,25 @@ Resources:
 Outputs:
   ApiEndpoint:
     Value: !Sub https://${HDICRApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
+
+  # Exported so the failing-access-test (scripts/authority-split-test.sh, G9) can name the
+  # exact key and role rather than being told them out of band. A proof that depends on
+  # someone pasting the right ARN is a proof about that person's care.
+  H2aIssuerKeyId:
+    Description: KMS key id of the H2A issuer signing key. Signs grants and status lists.
+    Value: !Ref H2aIssuerKey
+  H2aIssuerKeyArn:
+    Description: KMS key ARN of the H2A issuer signing key.
+    Value: !GetAtt H2aIssuerKey.Arn
+  H2aIssuerKeyAliasName:
+    Description: Stable alias - use this, not the key id, so rotation does not change callers.
+    Value: !Sub alias/h2a-issuer-${Environment}
+  H2aIssuerSigningRoleArn:
+    Description: >-
+      The ONLY principal permitted to sign with the H2A issuer key. Every other principal -
+      including Truly Imagined's Vercel role and Bridle's - is denied kms:Sign by the key
+      policy itself, which an IAM Allow cannot override.
+    Value: !GetAtt H2aIssuerSigningRole.Arn
   CustomDomain:
     Value: !If
       - ShouldCreateCustomDomain
