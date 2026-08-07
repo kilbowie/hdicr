@@ -15,7 +15,22 @@
 import { createHash, createPublicKey, verify as cryptoVerify } from 'crypto';
 import canonicalize from 'canonicalize';
 
-export const ISSUER_DID = 'did:web:trulyimagined.com';
+/**
+ * The issuer's identity, and the base for credential IDs.
+ *
+ * Both were hardcoded to the OPERATOR's domain — `trulyimagined.com` — inside a credential service
+ * that is meant to be neutral. ADR-010 promises the issuer namespace can be handed to a foundation
+ * in "two ownership moves, zero code changes", and that promise only holds if the namespace is a
+ * build-time constant rather than a string literal in the signer. D-E resolves the namespace to a
+ * neutral third domain; this is the precondition that makes moving to it a config change.
+ *
+ * DEFAULTS ARE TODAY'S VALUES, so setting nothing changes nothing. That matters here: merging to
+ * main deploys this service to production, and a silent change to ISSUER_DID would alter the
+ * verificationMethod in every newly issued credential while every existing one still refers to the
+ * old DID. Cutting over is a deliberate act — set the variables, and plan for the two DIDs to
+ * coexist while old credentials remain valid (which is what `#key-1` already demonstrates).
+ */
+export const ISSUER_DID = process.env.HDICR_ISSUER_DID ?? 'did:web:trulyimagined.com';
 export const SIGNING_VERIFICATION_METHOD = `${ISSUER_DID}#key-2`;
 export const CRYPTOSUITE = 'ecdsa-jcs-2019';
 export const PROOF_TYPE = 'DataIntegrityProof';
@@ -144,17 +159,31 @@ function sha256(data: Buffer | string): Buffer {
   return createHash('sha256').update(data).digest();
 }
 
-function jcs(obj: unknown): string {
+/**
+ * RFC 8785 canonical JSON — ADR-014's normative canonical form for the whole estate.
+ *
+ * Exported deliberately. hdicr was the ONLY conformant implementation when the estate was measured
+ * on 5 August 2026 (four canonicalisers, two signature encodings), so this is the shape the others
+ * were ported onto. It stays exported so that "hdicr is conformant" is something the interop
+ * vectors can assert rather than something the estate assumes — see test/adr014-vectors.test.ts.
+ */
+export function jcs(obj: unknown): string {
   const out = canonicalize(obj);
   if (typeof out !== 'string') throw new Error('JCS canonicalization failed');
   return out;
+}
+
+/** The UTF-8 bytes to sign or hash. Signatures are over bytes, not over strings. */
+export function jcsBytes(obj: unknown): Buffer {
+  return Buffer.from(jcs(obj), 'utf8');
 }
 
 // ---------------------------------------------------------------------------
 // Credential assembly + signing
 // ---------------------------------------------------------------------------
 
-const CREDENTIAL_ID_BASE = 'https://trulyimagined.com/api/credentials';
+const CREDENTIAL_ID_BASE =
+  process.env.HDICR_CREDENTIAL_ID_BASE ?? 'https://trulyimagined.com/api/credentials';
 
 export interface BuildCredentialParams {
   credentialId: string; // full URL (unique)
