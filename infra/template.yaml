@@ -118,6 +118,33 @@ Parameters:
     Type: String
     NoEcho: true
 
+  # --- H2A status list (S2.H1) ---
+  H2aIssuerOrigin:
+    Type: String
+    Default: https://trulyimagined.com
+    Description: >-
+      Origin the status list is published under, and the only place its id and mirrors are built
+      from. One constant so D-E's handover to a neutral domain is DNS plus this parameter, not a
+      code change. No trailing slash.
+
+  H2aStatusTtlMs:
+    Type: String
+    Default: "300000"
+    Description: >-
+      How long a verifier may treat a fetched status list as fresh, in milliseconds. This IS the
+      revocation horizon as far as any verifier is concerned - a list cached for an hour means a
+      withdrawal can take an hour to be observed, whatever the issuer does at its end. Bounded by
+      the media freshness window, not chosen for cache efficiency.
+
+  H2aStatusMirrors:
+    Type: String
+    Default: ""
+    Description: >-
+      Comma-separated URLs of BYTE-IDENTICAL mirrors, declared in the credential so a verifier can
+      fall back without asking. Byte-identical is load-bearing: the proof covers the canonical bytes
+      of the whole document, so a mirror that re-serialises the JSON serves something that fails
+      verification. Mirrors must be object copies, never re-renders.
+
 Conditions:
   ShouldManageHdicrComDomain: !Equals [!Ref ManageHdicrComDomain, "true"]
   ShouldCreateCustomDomain: !Equals [!Ref ManageCustomDomainResources, "true"]
@@ -340,6 +367,14 @@ Resources:
       Environment:
         Variables:
           VC_SIGNING_KMS_KEY_ID: !Ref VcSigningKey
+          # The status list is signed by the h2a-issuer key, NEVER by VcSigningKey. If one key did
+          # both, whoever can mint a credential could also clear a revocation bit and the
+          # issuer/implementer split would be nominal (ADR-009). Passed by ALIAS rather than key
+          # id so a rotation does not require a redeploy of this function.
+          H2A_ISSUER_KMS_KEY_ID: !Sub alias/h2a-issuer-${Environment}
+          H2A_ISSUER_ORIGIN: !Ref H2aIssuerOrigin
+          H2A_STATUS_TTL_MS: !Ref H2aStatusTtlMs
+          H2A_STATUS_MIRRORS: !Ref H2aStatusMirrors
       Policies:
         - Statement:
             - Effect: Allow
@@ -350,6 +385,14 @@ Resources:
                 - kms:Sign
                 - kms:GetPublicKey
               Resource: !GetAtt VcSigningKey.Arn
+            # Sign only. This function must never be able to schedule the deletion of the issuer
+            # key, change its policy, or disable it — the authority to publish a status list is not
+            # the authority to destroy the ability to publish one.
+            - Effect: Allow
+              Action:
+                - kms:Sign
+                - kms:GetPublicKey
+              Resource: !GetAtt H2aIssuerKey.Arn
       Events:
         Proxy:
           Type: Api
@@ -357,6 +400,16 @@ Resources:
             RestApiId: !Ref HDICRApi
             Path: /v1/credentials/{proxy+}
             Method: ANY
+        # PUBLIC, and separate from the /v1 proxy on purpose. The handler skips the Auth0 check for
+        # exactly this path prefix (S2.H1). A status list only authorised callers can fetch makes
+        # the operator the gatekeeper of whether a revocation can be OBSERVED, which is the power
+        # the issuer/implementer split exists to remove.
+        H2aStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref HDICRApi
+            Path: /h2a/status/{listId}
+            Method: GET
 
   LicensingFunction:
     Type: AWS::Serverless::Function
@@ -460,6 +513,17 @@ Outputs:
       including Truly Imagined's Vercel role and Bridle's - is denied kms:Sign by the key
       policy itself, which an IAM Allow cannot override.
     Value: !GetAtt H2aIssuerSigningRole.Arn
+  H2aStatusEndpoint:
+    Description: >-
+      Public, unauthenticated status list (S2.H1). Fetch as {this}/{listId}. Every other route on
+      this API requires an Auth0 token; this one must not, because a status list only authorised
+      callers can read makes the operator the gatekeeper of whether a revocation can be observed.
+    Value: !Sub https://${HDICRApi}.execute-api.${AWS::Region}.amazonaws.com/prod/h2a/status
+  H2aStatusMirrorsConfigured:
+    Description: >-
+      Byte-identical mirrors declared inside the signed credential. Empty until a CDN distribution
+      is provisioned - the mechanism ships here, the spend does not.
+    Value: !Ref H2aStatusMirrors
   CustomDomain:
     Value: !If
       - ShouldCreateCustomDomain
