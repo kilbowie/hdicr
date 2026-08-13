@@ -19,6 +19,7 @@ import {
   makeKmsSigner,
   getKmsPublicJwk,
 } from './vc-signer';
+import { serveStatusList } from './h2a-status';
 
 const STATUS_LIST_BASE_URL = 'https://trulyimagined.com/api/credentials/status';
 
@@ -52,6 +53,26 @@ export const handler: APIGatewayProxyHandler = async (event) => {
   try {
     if (httpMethod === 'OPTIONS') {
       return { statusCode: 200, headers: responseHeaders, body: '' };
+    }
+
+    // GET /h2a/status/{listId} — PUBLIC, and placed before the authorizer on purpose (S2.H1).
+    //
+    // A status list reachable only by callers the operator has authorised makes the operator the
+    // gatekeeper of whether a revocation can be OBSERVED, which is the same power the
+    // issuer/implementer split exists to remove (ADR-009). A performer's withdrawal has to be
+    // checkable by a verifier nobody has heard of, later, without asking anyone's permission.
+    //
+    // Nothing here is private: the list is a bitstring, an index identifies no one, and that
+    // unlinkability is the entire design of W3C Bitstring Status List. Publishing it is the
+    // feature. Every other route below stays authenticated.
+    if (httpMethod === 'GET' && path.startsWith('/h2a/status/')) {
+      const listId = decodeURIComponent(path.slice('/h2a/status/'.length).split('/')[0] ?? '');
+      const served = await serveStatusList(listId);
+      return {
+        statusCode: served.statusCode,
+        headers: withCorrelationHeaders({ ...corsHeaders, ...(served.headers ?? {}) }, correlationId),
+        body: served.body,
+      };
     }
 
     const authResult = await validateAuth0TokenWithStatus(event);
